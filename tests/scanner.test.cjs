@@ -85,8 +85,8 @@ function namePage(){
  const p=page();p.context.PhotoName={recognize:async()=>({name:'Fairy',source:'local-ocr'})};p.context.recognizePhotoLocally=()=>{};
  p.run("DOC={id:'D'};cur={isNew:true,ean:'123'};photo={front:'photo'};barcodeScanner.destroy=()=>{};");return p;
 }
-test('nazwa: wynik OCR uzupełnia pole i status sukcesu',async()=>{
- const p=namePage();await p.run('readPhotoName()');assert.equal(p.el('cNameIn').value,'Fairy');assert.equal(p.el('nameHint').className,'hint ok');
+test('nazwa: tekst OCR jest niepotwierdzoną propozycją, a nie nazwą',async()=>{
+ const p=namePage();await p.run('readPhotoName()');assert.equal(p.el('cNameIn').value,'');assert.equal(p.el('nameHint').className,'hint warn');assert.equal(p.el('btnUseName').hidden,false);
 });
 test('nazwa: ręczna zmiana w trakcie odczytu nie zostaje nadpisana',async()=>{
  const p=namePage();let finish;p.context.PhotoName.recognize=()=>new Promise(r=>finish=r);
@@ -101,4 +101,10 @@ test('nazwa: spóźniony odczyt nie trafia do kolejnego produktu',async()=>{
 test('nazwa: błąd odczytu nie mówi wpisz nazwę, gdy już jest wpisana',async()=>{
  const p=namePage();p.el('cNameIn').value='Ręczna';p.context.PhotoName.recognize=async()=>{throw Error('brak tekstu')};await p.run('readPhotoName()');
  assert.match(p.el('nameHint').textContent,/zachowana/);assert.doesNotMatch(p.el('nameHint').textContent,/wpisz/);
+});
+
+test('OCR odrzuca reklamowy fragment z raportu użytkownika',()=>{
+ const {nameFromOcrText}=require('../photo-name.js');
+ assert.equal(nameFromOcrText('NEW PoE ADVAN! FORMU sw'),'');
+ assert.equal(nameFromOcrText('NEW ADVANCED FORMULA\nTHE PINK STUFF\nMULTI-PURPOSE CLEANER'),'THE PINK STUFF MULTI-PURPOSE CLEANER');
 });
