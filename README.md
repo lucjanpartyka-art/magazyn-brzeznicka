@@ -31,3 +31,7 @@ Błędy i puste odpowiedzi AI uruchamiają zapasowy OCR polskiego i angielskiego
 ## Wersja 2026.10.06.2 — niepewny tekst OCR
 
 Lokalny OCR przedstawia wyłącznie propozycję do zatwierdzenia i nie wypełnia nazwy automatycznie. Odrzuca rozpoznane hasła reklamowe i wyniki poniżej progu pewności. Test na prostej etykiecie nie zastępuje sprawdzenia zdjęcia rzeczywistego opakowania.
+
+## Wersja 2026.10.06.3 — bez AI podczas liczenia
+
+Odczyt etykiety w formularzu odbywa się wyłącznie lokalnie (OCR). Zdjęcie nie jest przekazywane do Gemini, również przy błędzie OCR. Nazwę z odczytu użytkownik zatwierdza sam. Zdjęcie daty jest załącznikiem; datę i partię wpisuje się ręcznie. Katalog i skaner działają jak dotychczas. Analiza AI może dotyczyć dopiero plików zapisanych przy rekordach w bazie; formularz nie uruchamia takiej analizy.

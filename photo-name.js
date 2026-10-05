@@ -58,24 +58,12 @@ function nameFromOcrText(text) {
   return [...new Set(candidates)].slice(0, 10).join(' ').slice(0, 240);
 }
 
-// Obsługa błędu usługi i pustej odpowiedzi, niezależna od formularza.
-const PhotoName = (() => {
-  let unavailableUntil = 0;
-  async function recognize(image, remote, local, progress = () => {}) {
-    try {
-      if (Date.now() < unavailableUntil) throw new Error('Limit AI');
-      progress('Rozpoznaję nazwę produktu…');
-      const result = await withOcrTimeout(remote(image), 15000, 'Przekroczono czas odpowiedzi AI');
-      if (result && result.error) throw new Error(result.error);
-      const name = String(result && result.name || '').trim();
-      if (!name) throw new Error('AI nie zwróciło nazwy');
-      return { name, source: 'ai' };
-    } catch (error) {
-      if (/429|quota|limit|wyczerpan/i.test(error.message)) unavailableUntil = Date.now() + 300000;
-      progress('AI niedostępne — odczytuję tekst na urządzeniu…');
-      return local(image, progress);
-    }
+// Odczyt w formularzu jest wyłącznie lokalny: nie przyjmuje klienta AI.
+const PhotoName = {
+  async recognize(image, local, progress = () => {}) {
+    progress('Odczytuję tekst na urządzeniu…');
+    const result = await local(image, progress);
+    return { ...result, source: 'local-ocr', needsReview: true };
   }
-  return { recognize };
-})();
+};
 if (typeof module !== 'undefined') module.exports = { PhotoName, nameFromOcrText };
