@@ -49,13 +49,28 @@ async function recognizePhotoLocally(dataUrl, onProgress) {
   } finally { photoOcrProgress = () => {}; if (worker) await worker.terminate().catch(() => {}); photoOcrWorkerPromise = null; }
 }
 function nameFromOcrText(text) {
-  const lines = String(text || '').split(/\r?\n/).map(line => line.trim().replace(/\s+/g, ' '))
-    .filter(line => /[a-ząćęłńóśźż]/i.test(line) && line.length >= 2)
-    .filter(line => !/^(składniki|ingredients|wartości odżywcze|nutrition|www\.|https?:|kod partii|batch|lot\b|exp\b)/i.test(line));
-  // Hasła z góry opakowania nie mogą zastępować nazwy produktu.
-  const candidates = lines.filter(line => !/^(new\b|nowo[śs][ćc]\b|our best\b|advanced\b|improved\b|nowa formu[łl]a\b|streak free\b|sparkling clean\b)/i.test(line))
-    .filter(line => !/[!|{}<>]/.test(line));
-  return [...new Set(candidates)].slice(0, 10).join(' ').slice(0, 240);
+  // Opis działania, skład i instrukcje nie są częścią nazwy, również w jednej linii OCR.
+  const description = /\b(?:w\s+kr[oó]tkotrwa[łl]ym|kr[oó]tkotrwa[łl]ym|objawowym|w\s+leczeniu|do\s+stosowania|spos[oó]b\s+u[żz]ycia|spos[oó]b\s+stosowania|dawkowanie|przechowywa[ćc]|przed\s+u[żz]yciem|sk[łl]adniki|ingredients|nutrition|warnings|directions|keep\s+out|stosowa[ćc]|podczas\s+grypy)\b/i;
+  const lines = String(text || '').split(/\r?\n/);
+  const selected = [];
+  for (let line of lines) {
+    line = line.trim().replace(/\s+/g, ' ');
+    if (/^(new\b|nowo[śs][ćc]\b|our best\b|advanced\b|improved\b|nowa formu[łl]a\b|streak free\b|sparkling clean\b|www\.|https?:|kod partii|batch|lot\b|exp\b)/i.test(line)) continue;
+    const boundary = line.search(description);
+    if (boundary >= 0) line = line.slice(0, boundary);
+    // Znak wypunktowania zwykle zaczyna opis lub listę zastosowań.
+    line = line.split(/\s+[•*]\s*/)[0].replace(/[,;: .-]+$/, '');
+    if (/[a-ząćęłńóśźż]/i.test(line) && !/[!|{}<>]/.test(line) && line.length >= 2 && !selected.includes(line)) selected.push(line);
+    if (boundary >= 0 || selected.length >= 3) break;
+  }
+  let name = selected.join(' ');
+  // Pełna postać produktu kończy nazwę; nie dołączamy dalszych akapitów z pudełka.
+  const form = name.match(/\b(?:tabletki(?:\s+(?:powlekane|musuj[ąa]ce|do ssania))?|kapsu[łl]ki(?:\s+(?:mi[ęe]kkie|twarde))?)(?=\s|[,.;:]|$)/i);
+  if (form) name = name.slice(0, form.index + form[0].length);
+  // Twardy limit słów i długości, bez urywania wyrazu w połowie.
+  const words = name.split(/\s+/).filter(Boolean).slice(0, 12);
+  while (words.join(' ').length > 90) words.pop();
+  return words.join(' ').replace(/[,;: .-]+$/, '');
 }
 
 // Odczyt w formularzu jest wyłącznie lokalny: nie przyjmuje klienta AI.
