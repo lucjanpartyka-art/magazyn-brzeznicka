@@ -107,3 +107,22 @@ test('OCR odrzuca reklamowy fragment z raportu użytkownika',()=>{
  assert.equal(nameFromOcrText('NEW PoE ADVAN! FORMU sw'),'');
  assert.equal(nameFromOcrText('NEW ADVANCED FORMULA\nTHE PINK STUFF\nMULTI-PURPOSE CLEANER'),'THE PINK STUFF MULTI-PURPOSE CLEANER');
 });
+
+test('OCR nie dołącza opisu zastosowania do nazwy z pudełka',()=>{
+ const {nameFromOcrText}=require('../photo-name.js');
+ assert.equal(nameFromOcrText('Paracetamol Zentiva 500 mg tabletki , Paracetamolum z: * W krótkotrwałym objawowym leczeniu łagodnego do umiarkowanego bólu'),'Paracetamol Zentiva 500 mg tabletki');
+ assert.equal(nameFromOcrText('Marka\nŻel do mycia 250 ml\nSposób użycia: nanieść na skórę'),'Marka Żel do mycia 250 ml');
+ assert.equal(nameFromOcrText('Marka\nKapsułki miękkie\nSkładniki: olej'),'Marka Kapsułki miękkie');
+});
+test('OCR zachowuje wariant i rozmiar, ogranicza długi tekst całymi słowami',()=>{
+ const {nameFromOcrText}=require('../photo-name.js');
+ assert.equal(nameFromOcrText('BRZEŹNICKA\nHERBATA ZIELONA\nCYTRYNA I IMBIR 100 g'),'BRZEŹNICKA HERBATA ZIELONA CYTRYNA I IMBIR 100 g');
+ const result=nameFromOcrText('Długi opis produktu '.repeat(40));
+ assert.ok(result.length<=90);assert.ok(result.split(' ').length<=12);assert.ok(!result.endsWith('produ'));
+});
+
+test('OCR skraca błędny odczyt ze zrzutu bez zgadywania liter',()=>{
+ const {nameFromOcrText}=require('../photo-name.js');
+ const raw='oe" ETC EN aracetamol Zentiva 500 mg tabletki , Paracetamolum z: * W krótkotrwałym objawowym leczeniu łagodnego do umiarkowanego bólu';
+ assert.equal(nameFromOcrText(raw),'oe" ETC EN aracetamol Zentiva 500 mg tabletki');
+});
