@@ -23,3 +23,7 @@ Przykłady obrazów przedstawiają EAN 8936020052557: standardowy, obrócony, EX
 ## Zależności
 
 `vendor/zxing-reader-3.1.4.js` i `vendor/zxing_reader.wasm` pochodzą z przypiętego pakietu npm `zxing-wasm@3.1.4`. Licencje w `vendor/`. Zmiana wersji wymaga aktualizacji obu plików oraz testów; nie używać ruchomego adresu `@latest`.
+
+## Wersja 2026.10.06.1 — odczyt nazwy
+
+Błędy i puste odpowiedzi AI uruchamiają zapasowy OCR polskiego i angielskiego tekstu na urządzeniu. Pierwszy odczyt wymaga pobrania modułu Tesseract 6.0.1 i danych językowych; etykieta nie jest wysyłana do dostawcy biblioteki. Odczyt można ponowić z zapisanego zdjęcia. Wpisanej nazwy nie nadpisuje spóźniona odpowiedź; sugestię można zaakceptować przyciskiem. `tests/photo-name.html` sprawdza rzeczywisty lokalny OCR przy symulowanym błędzie AI.

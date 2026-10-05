@@ -129,7 +129,7 @@
 <body>
 <header class="top">
   <div><h1>📦 Liczenie towaru</h1><p>Magazyn Brzeźnicka</p></div>
-  <div><div class="who" id="who"></div><small style="font-size:10px">Skaner 2026.10.05.2</small></div>
+  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja 2026.10.06.1</small></div>
 </header>
 
 <main>
@@ -219,7 +219,7 @@
           <label>Zdjęcie przodu (wymagane dla nowego produktu)</label>
           <div class="photo" id="phFront" onclick="pickPhoto('front')"><span style="font-size:28px;">📷</span><span>Dotknij, by zrobić zdjęcie</span></div>
         </div>
-        <div class="field"><label for="cNameIn">Nazwa produktu</label><input type="text" id="cNameIn" autocomplete="off"><div class="hint" id="nameHint"></div></div>
+        <div class="field"><label for="cNameIn">Nazwa produktu</label><input type="text" id="cNameIn" autocomplete="off"><div class="hint" id="nameHint" role="status"></div><button type="button" class="btn sec" id="btnReadName" hidden onclick="retryPhotoName()">Odczytaj nazwę ponownie</button><button type="button" class="btn sec" id="btnUseName" hidden onclick="usePhotoName()">Użyj odczytanej nazwy</button></div>
       </div>
       <div class="field"><label for="cQty">Ilość (szt.)</label>
         <div class="stepper"><button type="button" onclick="step(-1)">–</button><input type="number" id="cQty" value="1" min="1" inputmode="numeric"><button type="button" onclick="step(1)">+</button></div>
@@ -267,6 +267,7 @@
 <div class="sheet-bg" id="sheetBg"><div class="sheet"><h3 id="shTitle"></h3><p id="shBody"></p><div id="shExtra"></div><div class="stack" id="shActions"></div></div></div>
 
 <script src="barcode-scanner.js?v=20261005-2"></script>
+<script src="photo-name.js?v=20261006-1"></script>
 <script>
 /* ================= konfiguracja ================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwxOwnfYuq4g-H766DWBrHkQn44SGzhZVUpQ4cyPztGuKekq6L0lXLQbnxfC3-G9R45YA/exec';
@@ -497,13 +498,11 @@ $('fileIn').addEventListener('change', async e => {
     return;
   }
   if (kind === 'front') {
-    photo.front = await compress(f, 1100, .65);
+    const image = await withOcrTimeout(compress(f, 1600, .88), 15000, 'Nie można przygotować zdjęcia. Wybierz JPG lub PNG.');
+    if (photoOwner !== ME || photoDoc !== (DOC && DOC.id)) return;
+    photo.front = image;
     $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie zrobione ✓</span>`;
-    if (!$('cNameIn').value.trim()) {
-      $('nameHint').textContent = '✨ Rozpoznaję produkt…'; $('nameHint').className = 'hint';
-      try { const r = await api('apiRecognize', PIN, 'name', await compress(photo.front, 800, .7)); if (r && r.name && !$('cNameIn').value.trim()) $('cNameIn').value = r.name; $('nameHint').textContent = r && r.name ? '✨ Sprawdź i popraw, jeśli trzeba' : 'Nie rozpoznano — wpisz nazwę'; $('nameHint').className = r && r.name ? 'hint' : 'hint warn'; }
-      catch(x){ $('nameHint').textContent = 'Bez internetu — wpisz nazwę'; $('nameHint').className = 'hint warn'; }
-    }
+    await readPhotoName();
     return;
   }
   if (kind === 'exp') {
@@ -518,6 +517,51 @@ $('fileIn').addEventListener('change', async e => {
     $(target).textContent = error.message || 'Nie udało się odczytać zdjęcia. Spróbuj ponownie.'; $(target).className = 'hint warn';
   } finally { photoBusy = false; $('btnAdd').disabled = !!(DOC && DOC.myStatus === 'ZAKOŃCZYŁ'); saveDraft(); }
 
+});
+
+let nameReading = false, nameSuggestion = '';
+async function readPhotoName(){
+  if (nameReading || !photo.front || !cur) return;
+  nameReading = true; nameSuggestion = ''; $('btnUseName').hidden = true;
+  $('btnReadName').hidden = false; $('btnReadName').disabled = true;
+  const product = cur, owner = ME, docId = DOC && DOC.id, image = photo.front;
+  const initialName = $('cNameIn').value;
+  const current = () => cur === product && owner === ME && docId === (DOC && DOC.id) && photo.front === image;
+  const progress = message => { if(current()){ $('nameHint').textContent = message; $('nameHint').className = 'hint'; } };
+  // Dwa silniki WASM naraz nie są potrzebne podczas odczytu etykiety.
+  barcodeScanner.destroy();
+  try {
+    const result = await PhotoName.recognize(image, img => api('apiRecognize', PIN, 'name', img), recognizePhotoLocally, progress);
+    if (!current()) return;
+    const name = String(result && result.name || '').trim();
+    if (!name) throw new Error('Nie odczytano czytelnej nazwy.');
+    if (!$('cNameIn').value.trim() && $('cNameIn').value === initialName) {
+      $('cNameIn').value = name;
+      $('nameHint').textContent = result.source === 'local-ocr' ? 'Odczytano tekst na urządzeniu — sprawdź i skróć nazwę, jeśli trzeba.' : 'Rozpoznano nazwę — sprawdź przed dodaniem.';
+    } else {
+      nameSuggestion = name; $('btnUseName').hidden = false;
+      $('nameHint').textContent = 'Odczytano: ' + name + '. Zachowano wpisaną nazwę.';
+    }
+    $('nameHint').className = 'hint ok';
+  } catch(error) {
+    if(current()){
+      $('nameHint').textContent = $('cNameIn').value.trim() ? 'Odczyt zdjęcia się nie udał. Wpisana nazwa została zachowana.' : 'Nie odczytano nazwy. Spróbuj ponownie lub wpisz ją ręcznie. ' + (error.message || '');
+      $('nameHint').className = 'hint warn';
+    }
+  } finally { nameReading = false; $('btnReadName').disabled = false; if(current()) saveDraft(); }
+}
+async function retryPhotoName(){
+  if (photoBusy || !photo.front) return;
+  photoBusy = true; $('btnAdd').disabled = true;
+  try { await readPhotoName(); } finally { photoBusy = false; $('btnAdd').disabled = !!(DOC && DOC.myStatus === 'ZAKOŃCZYŁ'); }
+}
+function usePhotoName(){
+  if (!nameSuggestion) return;
+  $('cNameIn').value = nameSuggestion; nameSuggestion = ''; $('btnUseName').hidden = true;
+  $('nameHint').textContent = 'Użyto odczytanej nazwy — sprawdź przed dodaniem.'; $('nameHint').className = 'hint ok'; saveDraft();
+}
+$('cNameIn').addEventListener('input', () => {
+  if (!nameReading && $('cNameIn').value.trim()) { $('nameHint').textContent = 'Nazwa wpisana — sprawdź przed dodaniem.'; $('nameHint').className = 'hint'; }
 });
 
 /* ================= po zeskanowaniu ================= */
@@ -568,6 +612,7 @@ function priceToExport(){ setMode('exp', true); showCount(); }
 function showCount(){
   $('scanArea').hidden = true; $('priceView').hidden = true; $('countView').hidden = false;
   photo = { front: null, exp: null };
+  nameSuggestion = ''; $('btnUseName').hidden = true; $('btnReadName').hidden = true;
   $('cQty').value = '1'; $('cExp').value = ''; $('cLot').value = ''; $('cPrice').value = ''; $('cNotes').value = '';
   $('phExp').classList.remove('filled'); $('phExpTxt').textContent = DOC && DOC.requireExpiry ? 'Zdjęcie daty ważności — wymagana data lub kod' : 'Zdjęcie daty ważności — odczytam (opcja)'; $('expHint').textContent = '';
   if (cur.isNew) {
@@ -740,7 +785,7 @@ function restoreDraft(saved){
     cur = draft.cur; showCount();
     for (const id of draftFields) $(id).value = draft.fields[id] || (id === 'cQty' ? '1' : '');
     photo = draft.photo || {front:null,exp:null};
-    if (photo.front) { $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie przywrócone ✓</span>`; }
+    if (photo.front) { $('btnReadName').hidden = false; $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie przywrócone ✓</span>`; }
     if (photo.exp) { $('phExp').classList.add('filled'); $('phExpTxt').textContent = 'Zdjęcie przywrócone ✓'; }
     lsSet('mg_draft', saved);
   } catch (_) { lsSet('mg_draft', null); }
