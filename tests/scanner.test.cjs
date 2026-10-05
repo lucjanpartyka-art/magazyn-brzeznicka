@@ -68,18 +68,17 @@ test('powrót z systemowej kamery nie startuje drugiego skanera',()=>{
  const a=page();a.run('photoPickPending=true');a.events.visibilitychange();assert.equal(a.run('scanning'),false);
 });
 
-test('nazwa: błąd usługi AI uruchamia lokalny OCR',async()=>{
- const {PhotoName}=require('../photo-name.js');let localCalls=0;
- const r=await PhotoName.recognize('image',async()=>({error:'AI niedostępne'}),async()=>{localCalls++;return {name:'FAIRY PLATINUM PLUS',source:'local-ocr'}});
- assert.equal(r.name,'FAIRY PLATINUM PLUS');assert.equal(localCalls,1);
+test('nazwa: odczyt wywołuje wyłącznie lokalny silnik',async()=>{
+ const {PhotoName}=require('../photo-name.js');let calls=0;
+ const result=await PhotoName.recognize('image',async image=>{assert.equal(image,'image');calls++;return {name:'Etykieta'}});
+ assert.equal(calls,1);assert.equal(result.source,'local-ocr');assert.equal(result.needsReview,true);
 });
-test('nazwa: pusta odpowiedź AI także uruchamia OCR',async()=>{
+test('nazwa: błąd lokalnego OCR nie uruchamia zapytania sieciowego',async()=>{
  const {PhotoName}=require('../photo-name.js');
- const r=await PhotoName.recognize('image',async()=>({name:'  '}),async()=>({name:'Odczyt lokalny'}));assert.equal(r.name,'Odczyt lokalny');
+ await assert.rejects(PhotoName.recognize('image',async()=>{throw Error('Nieczytelne')}),/Nieczytelne/);
 });
-test('nazwa: poprawny wynik AI nie uruchamia OCR',async()=>{
- const {PhotoName}=require('../photo-name.js');
- const r=await PhotoName.recognize('image',async()=>({name:' Fairy '}),async()=>assert.fail('zbędny OCR'));assert.equal(r.name,'Fairy');
+test('formularz zdjęcia nie zawiera wywołań AI',()=>{
+ assert.doesNotMatch(fs.readFileSync('index.html','utf8'),/apiRecognize/);
 });
 function namePage(){
  const p=page();p.context.PhotoName={recognize:async()=>({name:'Fairy',source:'local-ocr'})};p.context.recognizePhotoLocally=()=>{};
