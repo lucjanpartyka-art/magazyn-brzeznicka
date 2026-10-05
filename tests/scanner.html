@@ -1,0 +1,32 @@
+<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Test skanera EAN</title>
+<style>body{font:18px system-ui;background:#f5f6f8;color:#18232e;margin:24px}li{padding:8px}button{font:inherit;padding:12px}.ok{color:#187738}.bad{color:#b52525}</style>
+<h1>Test rzeczywistego odczytu EAN</h1><p>Oczekiwany kod: <b>8936020052557</b>. Obrazy syntetyczne, bez zapisu magazynowego.</p>
+<button id="run">Uruchom testy</button><ul id="results"></ul><p id="summary" role="status"></p>
+<script src="../barcode-scanner.js"></script><script>
+document.getElementById('run').onclick=async()=>{
+ const scanner=new WarehouseScanner.Scanner();const button=document.getElementById('run');button.disabled=true;
+ const list=document.getElementById('results');list.replaceChildren();let passed=0;
+ const fixtures=['ean-photo.jpg','ean-rotated.jpg','ean-iphone-size.jpg','ean-exif6.jpg','ean-curved.jpg','no-code.jpg'];
+ for(const name of fixtures){const row=document.createElement('li');list.append(row);row.textContent=name+' — odczyt…';const start=performance.now();try{
+  const blob=await fetch(name).then(r=>r.blob());const codes=await scanner.photo(blob);
+  const ok=name==='no-code.jpg'?!codes.length:codes.includes('8936020052557');if(ok)passed++;
+  row.className=ok?'ok':'bad';row.textContent=(ok?'✓ ':'✗ ')+name+' → '+(codes.join(', ')||'brak kodu')+' ('+Math.round(performance.now()-start)+' ms)';
+ }catch(e){row.className='bad';row.textContent='✗ '+name+' → '+e.message}}
+ const row=document.createElement('li');list.append(row);row.textContent='Strumień wideo — odczyt…';
+ const original=navigator.mediaDevices.getUserMedia;
+ let stream, drawTimer;
+ try {
+  const canvas=document.createElement('canvas');canvas.width=1280;canvas.height=720;
+  const img=new Image();await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject;img.src='ean-photo.jpg'});
+  const draw=()=>{const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,1280,720);ctx.drawImage(img,250,150,780,420)};
+  draw();stream=canvas.captureStream(15);drawTimer=setInterval(draw,100);
+  navigator.mediaDevices.getUserMedia=async()=>stream;
+  const video=document.createElement('video');video.style.width='240px';document.body.append(video);
+  const codes=await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('Limit czasu wideo')),15000);scanner.start(video,c=>{clearTimeout(timeout);resolve(c)},e=>{clearTimeout(timeout);reject(e)}).catch(e=>{clearTimeout(timeout);reject(e)})});
+  const ok=codes.includes('8936020052557');if(ok)passed++;
+  row.className=ok?'ok':'bad';row.textContent=(ok?'✓ ':'✗ ')+'Strumień wideo → '+codes.join(', ');video.remove();
+ }catch(e){row.className='bad';row.textContent='✗ Strumień wideo → '+e.message}
+ finally{clearInterval(drawTimer);if(stream)stream.getTracks().forEach(t=>t.stop());navigator.mediaDevices.getUserMedia=original;scanner.destroy()}
+ button.disabled=false;document.getElementById('summary').textContent=passed+'/'+(fixtures.length+1)+' testów przeszło';
+};
+</script></html>
