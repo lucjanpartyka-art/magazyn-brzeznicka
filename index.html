@@ -129,7 +129,7 @@
 <body>
 <header class="top">
   <div><h1>📦 Liczenie towaru</h1><p>Magazyn Brzeźnicka</p></div>
-  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja 2026.10.06.1</small></div>
+  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja 2026.10.06.2</small></div>
 </header>
 
 <main>
@@ -219,7 +219,7 @@
           <label>Zdjęcie przodu (wymagane dla nowego produktu)</label>
           <div class="photo" id="phFront" onclick="pickPhoto('front')"><span style="font-size:28px;">📷</span><span>Dotknij, by zrobić zdjęcie</span></div>
         </div>
-        <div class="field"><label for="cNameIn">Nazwa produktu</label><input type="text" id="cNameIn" autocomplete="off"><div class="hint" id="nameHint" role="status"></div><button type="button" class="btn sec" id="btnReadName" hidden onclick="retryPhotoName()">Odczytaj nazwę ponownie</button><button type="button" class="btn sec" id="btnUseName" hidden onclick="usePhotoName()">Użyj odczytanej nazwy</button></div>
+        <div class="field"><label for="cNameIn">Nazwa produktu</label><input type="text" id="cNameIn" autocomplete="off"><div class="hint" id="nameHint" role="status"></div><button type="button" class="btn sec" id="btnReadName" hidden onclick="retryPhotoName()">Odczytaj nazwę ponownie</button><button type="button" class="btn sec" id="btnUseName" hidden onclick="usePhotoName()">Użyj tej propozycji</button></div>
       </div>
       <div class="field"><label for="cQty">Ilość (szt.)</label>
         <div class="stepper"><button type="button" onclick="step(-1)">–</button><input type="number" id="cQty" value="1" min="1" inputmode="numeric"><button type="button" onclick="step(1)">+</button></div>
@@ -267,7 +267,7 @@
 <div class="sheet-bg" id="sheetBg"><div class="sheet"><h3 id="shTitle"></h3><p id="shBody"></p><div id="shExtra"></div><div class="stack" id="shActions"></div></div></div>
 
 <script src="barcode-scanner.js?v=20261005-2"></script>
-<script src="photo-name.js?v=20261006-1"></script>
+<script src="photo-name.js?v=20261006-2"></script>
 <script>
 /* ================= konfiguracja ================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwxOwnfYuq4g-H766DWBrHkQn44SGzhZVUpQ4cyPztGuKekq6L0lXLQbnxfC3-G9R45YA/exec';
@@ -535,14 +535,14 @@ async function readPhotoName(){
     if (!current()) return;
     const name = String(result && result.name || '').trim();
     if (!name) throw new Error('Nie odczytano czytelnej nazwy.');
-    if (!$('cNameIn').value.trim() && $('cNameIn').value === initialName) {
+    if (result.source !== 'local-ocr' && !$('cNameIn').value.trim() && $('cNameIn').value === initialName) {
       $('cNameIn').value = name;
       $('nameHint').textContent = result.source === 'local-ocr' ? 'Odczytano tekst na urządzeniu — sprawdź i skróć nazwę, jeśli trzeba.' : 'Rozpoznano nazwę — sprawdź przed dodaniem.';
     } else {
       nameSuggestion = name; $('btnUseName').hidden = false;
-      $('nameHint').textContent = 'Odczytano: ' + name + '. Zachowano wpisaną nazwę.';
+      $('nameHint').textContent = (result.source === 'local-ocr' ? 'Niepotwierdzony tekst z etykiety: ' : 'Odczytano: ') + name + ($('cNameIn').value.trim() ? '. Zachowano wpisaną nazwę.' : '. Sprawdź, czy to nazwa produktu; popraw ją ręcznie lub użyj propozycji.');
     }
-    $('nameHint').className = 'hint ok';
+    $('nameHint').className = result.source === 'local-ocr' ? 'hint warn' : 'hint ok';
   } catch(error) {
     if(current()){
       $('nameHint').textContent = $('cNameIn').value.trim() ? 'Odczyt zdjęcia się nie udał. Wpisana nazwa została zachowana.' : 'Nie odczytano nazwy. Spróbuj ponownie lub wpisz ją ręcznie. ' + (error.message || '');

@@ -40,8 +40,8 @@ async function recognizePhotoLocally(dataUrl, onProgress) {
     await worker.setParameters({ tessedit_pageseg_mode: '11' });
     const result = await withOcrTimeout(worker.recognize(dataUrl), 30000, 'Odczyt zdjęcia trwa zbyt długo. Zrób bliższe, ostre zdjęcie etykiety.');
     const name = nameFromOcrText(result.data.text);
-    if (!name || Number(result.data.confidence) < 35) throw new Error('Nie odczytano czytelnej nazwy. Zrób ostre zdjęcie przodu opakowania lub wpisz nazwę ręcznie.');
-    return { name, text: result.data.text, source: 'local-ocr' };
+    if (!name || Number(result.data.confidence) < 65) throw new Error('Nie odczytano czytelnej nazwy. Zrób ostre zdjęcie przodu opakowania lub wpisz nazwę ręcznie.');
+    return { name, text: result.data.text, source: 'local-ocr', needsReview: true };
   } catch (error) {
     if (worker) await worker.terminate().catch(() => {});
     photoOcrWorkerPromise = null;
@@ -52,7 +52,10 @@ function nameFromOcrText(text) {
   const lines = String(text || '').split(/\r?\n/).map(line => line.trim().replace(/\s+/g, ' '))
     .filter(line => /[a-ząćęłńóśźż]/i.test(line) && line.length >= 2)
     .filter(line => !/^(składniki|ingredients|wartości odżywcze|nutrition|www\.|https?:|kod partii|batch|lot\b|exp\b)/i.test(line));
-  return lines.slice(0, 5).join(' ').slice(0, 240);
+  // Hasła z góry opakowania nie mogą zastępować nazwy produktu.
+  const candidates = lines.filter(line => !/^(new\b|nowo[śs][ćc]\b|our best\b|advanced\b|improved\b|nowa formu[łl]a\b|streak free\b|sparkling clean\b)/i.test(line))
+    .filter(line => !/[!|{}<>]/.test(line));
+  return [...new Set(candidates)].slice(0, 10).join(' ').slice(0, 240);
 }
 
 // Obsługa błędu usługi i pustej odpowiedzi, niezależna od formularza.
