@@ -67,3 +67,38 @@ test('formularz innego użytkownika nie jest przywracany',()=>{
 test('powrót z systemowej kamery nie startuje drugiego skanera',()=>{
  const a=page();a.run('photoPickPending=true');a.events.visibilitychange();assert.equal(a.run('scanning'),false);
 });
+
+test('nazwa: błąd usługi AI uruchamia lokalny OCR',async()=>{
+ const {PhotoName}=require('../photo-name.js');let localCalls=0;
+ const r=await PhotoName.recognize('image',async()=>({error:'AI niedostępne'}),async()=>{localCalls++;return {name:'FAIRY PLATINUM PLUS',source:'local-ocr'}});
+ assert.equal(r.name,'FAIRY PLATINUM PLUS');assert.equal(localCalls,1);
+});
+test('nazwa: pusta odpowiedź AI także uruchamia OCR',async()=>{
+ const {PhotoName}=require('../photo-name.js');
+ const r=await PhotoName.recognize('image',async()=>({name:'  '}),async()=>({name:'Odczyt lokalny'}));assert.equal(r.name,'Odczyt lokalny');
+});
+test('nazwa: poprawny wynik AI nie uruchamia OCR',async()=>{
+ const {PhotoName}=require('../photo-name.js');
+ const r=await PhotoName.recognize('image',async()=>({name:' Fairy '}),async()=>assert.fail('zbędny OCR'));assert.equal(r.name,'Fairy');
+});
+function namePage(){
+ const p=page();p.context.PhotoName={recognize:async()=>({name:'Fairy',source:'local-ocr'})};p.context.recognizePhotoLocally=()=>{};
+ p.run("DOC={id:'D'};cur={isNew:true,ean:'123'};photo={front:'photo'};barcodeScanner.destroy=()=>{};");return p;
+}
+test('nazwa: wynik OCR uzupełnia pole i status sukcesu',async()=>{
+ const p=namePage();await p.run('readPhotoName()');assert.equal(p.el('cNameIn').value,'Fairy');assert.equal(p.el('nameHint').className,'hint ok');
+});
+test('nazwa: ręczna zmiana w trakcie odczytu nie zostaje nadpisana',async()=>{
+ const p=namePage();let finish;p.context.PhotoName.recognize=()=>new Promise(r=>finish=r);
+ const pending=p.run('readPhotoName()');p.el('cNameIn').value='Nazwa ręczna';finish({name:'Fairy'});await pending;
+ assert.equal(p.el('cNameIn').value,'Nazwa ręczna');assert.equal(p.el('btnUseName').hidden,false);
+ p.run('usePhotoName()');assert.equal(p.el('cNameIn').value,'Fairy');
+});
+test('nazwa: spóźniony odczyt nie trafia do kolejnego produktu',async()=>{
+ const p=namePage();let finish;p.context.PhotoName.recognize=()=>new Promise(r=>finish=r);
+ const pending=p.run('readPhotoName()');p.run("cur={isNew:true,ean:'456'}");finish({name:'Fairy'});await pending;assert.equal(p.el('cNameIn').value,'');
+});
+test('nazwa: błąd odczytu nie mówi wpisz nazwę, gdy już jest wpisana',async()=>{
+ const p=namePage();p.el('cNameIn').value='Ręczna';p.context.PhotoName.recognize=async()=>{throw Error('brak tekstu')};await p.run('readPhotoName()');
+ assert.match(p.el('nameHint').textContent,/zachowana/);assert.doesNotMatch(p.el('nameHint').textContent,/wpisz/);
+});
