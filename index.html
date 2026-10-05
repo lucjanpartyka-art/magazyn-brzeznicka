@@ -34,6 +34,7 @@
       --border:#33373C; color-scheme:dark;
     }
   }
+  [hidden]{display:none !important;}
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0; padding:0;}
   body{background:var(--bg); color:var(--ink); font-family:var(--font-b); min-height:100vh; padding-bottom:calc(32px + env(safe-area-inset-bottom,0px));}
@@ -86,7 +87,7 @@
   .mode button.on.exp{border-color:var(--accent); background:var(--accent-soft); color:var(--accent);}
   .mode button.on.pri{border-color:var(--info); background:var(--info-soft); color:var(--info);}
   .scanner{position:relative; background:#000; border-radius:var(--radius); overflow:hidden; aspect-ratio:4/3; max-height:42vh; width:100%;}
-  .scanner video{width:100%; height:100%; object-fit:cover; display:block;}
+  .scanner video{width:100%; height:100%; object-fit:contain; display:block;}
   .scanner .frame{position:absolute; left:10%; right:10%; top:35%; bottom:35%; border:3px solid rgba(255,255,255,.85); border-radius:10px; box-shadow:0 0 0 2000px rgba(0,0,0,.25);}
   .scanner .msg{position:absolute; left:0; right:0; bottom:8px; text-align:center; color:#fff; font-size:13px; font-weight:600; text-shadow:0 1px 3px #000;}
   .scanner.flash .frame{border-color:#54C46B;}
@@ -128,14 +129,14 @@
 <body>
 <header class="top">
   <div><h1>📦 Liczenie towaru</h1><p>Magazyn Brzeźnicka</p></div>
-  <div class="who" id="who"></div>
+  <div><div class="who" id="who"></div><small style="font-size:10px">Skaner 2026.10.05.2</small></div>
 </header>
 
 <main>
 <!-- LOGOWANIE -->
 <section class="screen active" id="scrLogin">
   <div class="login">
-    <h2>Wpisz swój PIN</h2>
+    <h2 id="loginTitle">Wpisz swój PIN</h2>
     <p class="hint">8 cyfr od administratora</p>
     <input class="pin" id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
     <div class="hint" id="loginMsg" style="margin-top:10px;"></div>
@@ -181,12 +182,13 @@
 
     <div id="scanArea">
       <div class="scanner" id="scanner" hidden><video id="video" playsinline muted></video><div class="frame"></div><div class="msg" id="scanMsg">Wyceluj w kod kreskowy</div></div>
-      <div class="scanfallback" id="scanFallback" hidden>
+      <div class="scanfallback" id="scanFallback">
+        <button class="btn sec" id="btnLiveScan" onclick="startScanner(true)">Uruchom skaner na żywo</button>
         <button class="btn" onclick="pickPhoto('code')">📷 Zrób zdjęcie kodu kreskowego</button>
       </div>
       <div class="manual"><input type="text" id="manualEan" inputmode="numeric" placeholder="lub wpisz EAN ręcznie"><button class="btn sec" onclick="manualGo()">OK</button></div>
       <button class="link" id="btnNoCode" onclick="noCode()">Produkt nie ma kodu kreskowego</button>
-      <div class="hint" id="scanHint"></div>
+      <div class="hint" id="scanHint" role="status" aria-live="polite"></div>
     </div>
 
     <!-- wynik: cena -->
@@ -264,7 +266,7 @@
 <div class="toast" id="toast" role="status"></div>
 <div class="sheet-bg" id="sheetBg"><div class="sheet"><h3 id="shTitle"></h3><p id="shBody"></p><div id="shExtra"></div><div class="stack" id="shActions"></div></div></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
+<script src="barcode-scanner.js?v=20261005-2"></script>
 <script>
 /* ================= konfiguracja ================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwxOwnfYuq4g-H766DWBrHkQn44SGzhZVUpQ4cyPztGuKekq6L0lXLQbnxfC3-G9R45YA/exec';
@@ -369,12 +371,19 @@ async function afterLogin(offline){
   show('scrHome');
   loadCatalog();
   const saved = lsGet('mg_docjson');
-  if (saved) { try { const d = JSON.parse(saved); if (offline) return enterDoc(d); return enterDoc(await api('apiDocInfo', PIN, d.id)); } catch(e){ lsSet('mg_docjson', null); } }
+  if (saved) {
+    let d;
+    try { d = JSON.parse(saved); if (offline) return enterDoc(d); return enterDoc(await api('apiDocInfo', PIN, d.id)); }
+    catch(e){
+      if (isNet(e) && d) { toast('Brak połączenia — przywracam otwarty dokument'); return enterDoc(d); }
+      if (!isNet(e)) lsSet('mg_docjson', null);
+    }
+  }
   processQueue();
 }
 function logout(reason){
   stopScanner();
-  PIN = ME = DOC = null; ['mg_pin','mg_name','mg_price','mg_docjson'].forEach(k => lsSet(k, null));
+  PIN = ME = DOC = null; ['mg_pin','mg_name','mg_price','mg_docjson','mg_draft'].forEach(k => lsSet(k, null));
   $('who').textContent = ''; show('scrLogin');
   if (reason) { $('loginMsg').textContent = reason; $('loginMsg').className = 'hint bad'; }
 }
@@ -413,9 +422,10 @@ function enterDoc(doc){
   $('btnClose').textContent = isIn ? '🔒 Zamknij dostawę (PIN)' : '🔒 Zamknij export (PIN)';
   $('modeBar').hidden = !(CAN_PRICE && !isIn);
   setMode('exp', true);
-  show('scrCount'); tab('add'); renderStatus(); refreshItems(); processQueue();
+  const savedDraft = lsGet('mg_draft');
+  show('scrCount'); tab('add'); restoreDraft(savedDraft); renderStatus(); refreshItems(); processQueue();
 }
-function leaveDoc(){ stopScanner(); DOC = null; lsSet('mg_docjson', null); show('scrHome'); }
+function leaveDoc(){ stopScanner(); lsSet('mg_draft', null); DOC = null; lsSet('mg_docjson', null); show('scrHome'); }
 function openPriceOnly(){
   DOC = null; PRICE_ONLY = true;
   $('docHead').hidden = true; $('tabsBar').hidden = true; $('modeBar').hidden = true; $('btnBackPrice').hidden = false;
@@ -435,37 +445,32 @@ function tab(t){
 }
 
 /* ================= skaner ================= */
-let zx = null, scanning = false, lastCode = '', lastAt = 0;
-function reader(){
-  if (zx || !window.ZXing) return zx;
-  const hints = new Map();
-  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8, ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E, ZXing.BarcodeFormat.CODE_128]);
-  zx = new ZXing.BrowserMultiFormatReader(hints, 250);
-  return zx;
+const barcodeScanner = new WarehouseScanner.Scanner();
+let scanning = false, photoPickPending = false, photoBusy = false;
+function scannedCodes(codes){
+  if (codes.length > 1) return sheet('Na zdjęciu jest kilka kodów', 'Wybierz kod liczonego produktu:', codes.map(code => ({label:code, fn:()=>onCode(code)})).concat([{label:'Anuluj',cls:'sec'}]));
+  if (codes[0]) onCode(codes[0]);
 }
-async function startScanner(){
-  $('scanArea').hidden = false;
-  const canLive = !IN_GAS && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && reader();
-  if (!canLive) { $('scanner').hidden = true; $('scanFallback').hidden = false; return; }
-  $('scanner').hidden = false; $('scanFallback').hidden = true;
-  if (scanning) return;
-  scanning = true; $('scanMsg').textContent = 'Wyceluj w kod kreskowy';
-  try {
-    await reader().decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } }, 'video', (res) => {
-      if (!res) return;
-      const code = digits(res.getText()); const t = Date.now();
-      if (!code || (code === lastCode && t - lastAt < 2500)) return;
-      lastCode = code; lastAt = t;
-      $('scanner').classList.add('flash'); setTimeout(() => $('scanner').classList.remove('flash'), 300);
-      try { navigator.vibrate && navigator.vibrate(60); } catch(e){}
-      onCode(code);
-    });
-  } catch(e){
-    scanning = false; $('scanner').hidden = true; $('scanFallback').hidden = false;
-    $('scanHint').textContent = 'Kamera niedostępna (' + (e.name || e.message) + ') — zrób zdjęcie kodu albo wpisz EAN.'; $('scanHint').className = 'hint warn';
+async function startScanner(requestCamera = false){
+  $('scanArea').hidden = false; $('scanFallback').hidden = false;
+  if (!requestCamera || photoPickPending || photoBusy || scanning || document.hidden) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('scanHint').textContent = 'Podgląd kamery niedostępny — wybierz zdjęcie kodu.'; return;
   }
+  scanning = true; $('scanner').hidden = false; $('btnLiveScan').disabled = true;
+  $('scanMsg').textContent = 'Uruchamiam aparat…';
+  const failed = e => {
+    stopScanner();
+    $('scanHint').textContent = 'Nie uruchomiono skanera: ' + (e.message || e.name) + '. Możesz wybrać zdjęcie kodu.';
+    $('scanHint').className = 'hint warn';
+  };
+  try {
+    await barcodeScanner.start($('video'), codes => { stopScanner(); scannedCodes(codes); }, failed);
+    if (scanning) $('scanMsg').textContent = 'Pokaż cały kod z białym marginesem. Odsuń aparat, jeśli obraz jest nieostry.';
+  } catch(e){ failed(e); }
 }
-function stopScanner(){ if (zx) { try { zx.reset(); } catch(e){} } scanning = false; }
+function stopScanner(){ barcodeScanner.stop(); scanning = false; $('scanner').hidden = true; $('btnLiveScan').disabled = false; }
+
 function manualGo(){ const c = digits($('manualEan').value); if (c.length < 6) return toast('Wpisz cały EAN'); $('manualEan').value = ''; onCode(c); }
 
 /* zdjęcia */
@@ -476,18 +481,19 @@ function compress(src, maxW, q){
     const r = new FileReader(); r.onerror = () => reject(new Error('read')); r.onload = e => load(e.target.result); r.readAsDataURL(src);
   });
 }
-function pickPhoto(kind){ pickKind = kind; $('fileIn').click(); }
+function pickPhoto(kind){ if(photoBusy) return; saveDraft(); stopScanner(); photoPickPending = true; pickKind = kind; $('fileIn').click(); }
+$('fileIn').addEventListener('cancel', () => { photoPickPending = false; });
 $('fileIn').addEventListener('change', async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  const kind = pickKind;
+  const f = e.target.files[0]; e.target.value = ''; photoPickPending = false; if (!f || photoBusy) return;
+  const kind = pickKind; const photoOwner = ME; const photoDoc = DOC && DOC.id;
+  photoBusy = true; $('btnAdd').disabled = true;
+  try {
   if (kind === 'code') {
-    $('scanHint').textContent = '🔍 Odczytuję kod…'; $('scanHint').className = 'hint';
-    const raw = await compress(f, 1600, .85);
-    let code = '';
-    try { const r = await reader().decodeFromImageUrl(raw); code = digits(r.getText()); } catch(x){}
-    if (!code) { try { const r = await reader().decodeFromImageUrl(await compress(raw, 800, .9)); code = digits(r.getText()); } catch(x){} }
-    if (!code) { try { const r = await api('apiRecognize', PIN, 'ean', raw); code = digits(r && r.ean); } catch(x){} }
-    if (code) { $('scanHint').textContent = ''; onCode(code); } else { $('scanHint').textContent = 'Nie odczytano — wpisz EAN ręcznie'; $('scanHint').className = 'hint warn'; }
+    $('scanHint').className = 'hint';
+    const codes = await barcodeScanner.photo(f, message => { $('scanHint').textContent = message; });
+    if (photoOwner !== ME || photoDoc !== (DOC && DOC.id)) return;
+    if (codes.length) { $('scanHint').textContent = ''; scannedCodes(codes); }
+    else { $('scanHint').textContent = 'Nie znaleziono kodu. Obejmij cały kod i biały margines, unikaj odblasku. Spróbuj ponownie lub wpisz EAN.'; $('scanHint').className = 'hint warn'; }
     return;
   }
   if (kind === 'front') {
@@ -507,6 +513,11 @@ $('fileIn').addEventListener('change', async e => {
     try { const r = await api('apiRecognize', PIN, 'expiry', await compress(photo.exp, 1400, .8)); if (r && /^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) $('cExp').value = r.date; if (r && r.lot && !$('cLot').value.trim()) $('cLot').value = r.lot; $('expHint').textContent = (r && (r.date || r.lot)) ? '✓ Odczytano — sprawdź' : 'Nie odczytano — wpisz ręcznie'; $('expHint').className = (r && (r.date || r.lot)) ? 'hint ok' : 'hint warn'; }
     catch(x){ $('expHint').textContent = 'Bez internetu — wpisz ręcznie'; $('expHint').className = 'hint warn'; }
   }
+  } catch(error) {
+    const target = kind === 'code' ? 'scanHint' : kind === 'front' ? 'nameHint' : 'expHint';
+    $(target).textContent = error.message || 'Nie udało się odczytać zdjęcia. Spróbuj ponownie.'; $(target).className = 'hint warn';
+  } finally { photoBusy = false; $('btnAdd').disabled = !!(DOC && DOC.myStatus === 'ZAKOŃCZYŁ'); saveDraft(); }
+
 });
 
 /* ================= po zeskanowaniu ================= */
@@ -575,13 +586,14 @@ function showCount(){
 }
 function step(d){ const el = $('cQty'); let v = parseInt(el.value || '1', 10) + d; if (isNaN(v) || v < 1) v = 1; el.value = v; }
 function resetScan(){
-  cur = null; $('priceView').hidden = true; $('countView').hidden = true; $('scanHint').textContent = '';
+  if (photoBusy) return;
+  cur = null; lsSet('mg_draft', null); $('priceView').hidden = true; $('countView').hidden = true; $('scanHint').textContent = '';
   if (!$('pAdd').hidden) startScanner();
 }
 
 function newId(){ return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
 async function addItem(){
-  if (!DOC) return;
+  if (!DOC || photoBusy) return;
   if (DOC.myStatus === 'ZAKOŃCZYŁ') return toast('Zakończyłeś liczenie — wznów je w zakładce Koniec');
   const name = cur.isNew ? $('cNameIn').value.trim() : cur.name;
   const item = {
@@ -715,8 +727,36 @@ async function doClose(force, pinOverride){
 }
 
 /* ================= start ================= */
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); else if ($('scrCount').classList.contains('active') && !$('pAdd').hidden && !cur) startScanner(); });
-(function init(){ const s = lsGet('mg_pin'); if (s) login(s); else setTimeout(() => $('pinInput').focus(), 200); updateQbar(); })();
+const draftFields = ['cNameIn','cQty','cExp','cLot','cPrice','cNotes'];
+function saveDraft(){
+  if (!DOC || !ME || !cur) return;
+  const draft = { owner:ME, docId:DOC.id, cur, fields:Object.fromEntries(draftFields.map(id=>[id,$(id).value])), photo };
+  lsSet('mg_draft', JSON.stringify(draft));
+}
+function restoreDraft(saved){
+  if (!saved || !DOC) return;
+  try {
+    const draft = JSON.parse(saved); if (draft.owner !== ME || draft.docId !== DOC.id || !draft.cur) return;
+    cur = draft.cur; showCount();
+    for (const id of draftFields) $(id).value = draft.fields[id] || (id === 'cQty' ? '1' : '');
+    photo = draft.photo || {front:null,exp:null};
+    if (photo.front) { $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie przywrócone ✓</span>`; }
+    if (photo.exp) { $('phExp').classList.add('filled'); $('phExpTxt').textContent = 'Zdjęcie przywrócone ✓'; }
+    lsSet('mg_draft', saved);
+  } catch (_) { lsSet('mg_draft', null); }
+}
+draftFields.forEach(id => $(id).addEventListener('input', saveDraft));
+window.addEventListener('pagehide', () => { saveDraft(); stopScanner(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { saveDraft(); stopScanner(); }
+  // Powrót z aparatu nie uruchamia drugiego strumienia ani okna uprawnień.
+});
+(function init(){
+  const s = lsGet('mg_pin');
+  if (s) { $('pinInput').hidden = true; $('loginTitle').textContent = 'Wznawiam pracę…'; $('loginMsg').textContent = 'Sprawdzam zapisaną sesję'; login(s).finally(() => { $('pinInput').hidden = false; $('loginTitle').textContent = 'Wpisz swój PIN'; }); }
+  else setTimeout(() => $('pinInput').focus(), 200);
+  updateQbar();
+})();
 </script>
 </body>
 </html>
