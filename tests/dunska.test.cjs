@@ -15,7 +15,7 @@ function page() {
   }
   const doc = {id: 'D123abcd', title: 'Wydanie', items: [{sku: 'S1', name: 'Towar', qty: 3}, {sku: 'S2', name: 'Drugi', qty: 2}]};
   const ctx = vm.createContext({
-    PIN: 'token', USER_ID: 'EMP-EWAA-0005', document: {createElement: element},
+    PIN: 'token', ROLES: ['RECEIVE_DUNSKA'], USER_ID: 'EMP-EWAA-0005', document: {createElement: element},
     $: id => {
       if (!elements.has(id)) elements.set(id, element());
       return elements.get(id);
@@ -97,4 +97,31 @@ test('lista oznacza niedokończony odbiór jako wznowienie zapisu', async () => 
   p.ctx.api = async () => [{id: 'D123abcd', title: 'Wydanie', acceptancePending: true}];
   await p.run('openDunska()');
   assert.match(p.elements.get('dunskaList').children[0].textContent, /Wznów zapis odbioru/);
+});
+
+test('Braki są widoczne bez RECEIVE_DUNSKA, bez wywołania odbiorów', async () => {
+  const p = page();
+  p.ctx.ROLES = [];
+  p.ctx.api = async (...args) => {
+    p.calls.push(args);
+    return {items: [{sku: 'S1', name: 'Towar', stanDunska: 1, stanMin: 5, deficit: 4, stanBrzeznicka: 3}], source: 'IMPORT', dataTime: '2026-10-07T09:00:00Z', stale: true};
+  };
+  await p.run('openDunska()');
+  await p.run("dunskaTab('braki')");
+  assert.equal(p.elements.get('dunskaPending').hidden, true);
+  assert.equal(p.elements.get('dunskaLowStock').hidden, false);
+  assert.match(p.elements.get('dunskaLowStockMeta').textContent, /IMPORT/);
+  assert.match(p.elements.get('dunskaLowStockWarning').textContent, /nieaktualne/);
+  assert.match(p.elements.get('dunskaLowStockItems').children[0].textContent, /S1.*4/);
+  assert.equal(p.calls.some(call => call[0] === 'apiListPendingDunska'), false);
+});
+test('spóźnione braki po wylogowaniu nie ujawniają danych', async () => {
+  const p = page();
+  let resolve;
+  p.ctx.api = () => new Promise(done => { resolve = done; });
+  const pending = p.run('loadDunskaLowStock()');
+  p.run("PIN='';leaveDunska()");
+  resolve({items: [{sku: 'SECRET'}], source: 'CZYTNIK', dataTime: '', stale: true});
+  await pending;
+  assert.doesNotMatch(p.elements.get('dunskaLowStockItems').textContent, /SECRET/);
 });

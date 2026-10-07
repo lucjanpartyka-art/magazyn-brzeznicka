@@ -2,17 +2,33 @@
 let DUNSKA_DOC = null;
 let DUNSKA_ROWS = [];
 let DUNSKA_VERSION = 0;
+let DUNSKA_TAB = 'odbior';
+let DUNSKA_LOW_VERSION = 0;
 function leaveDunska() {
   barcodeScanner.stop();
   DUNSKA_VERSION++;
+  DUNSKA_LOW_VERSION++;
   DUNSKA_DOC = null;
   DUNSKA_ROWS = [];
   $('dunskaCamera').hidden = true;
+  $('dunskaLowStockItems').replaceChildren();
+  $('dunskaLowStockItems').textContent = '';
+  $('dunskaLowStockMeta').textContent = '';
+  $('dunskaLowStockWarning').textContent = '';
 }
 async function openDunska() {
   leaveDunska();
   show('scrDunska');
   $('dunskaForm').hidden = true;
+  const canReceive = ROLES.includes('RECEIVE_DUNSKA');
+  $('dunskaReceiverTab').hidden = !canReceive;
+  $('dunskaPending').hidden = !canReceive || DUNSKA_TAB === 'braki';
+  $('dunskaLowStock').hidden = canReceive && DUNSKA_TAB !== 'braki';
+  if (!canReceive || DUNSKA_TAB === 'braki') {
+    DUNSKA_TAB = 'braki';
+    await loadDunskaLowStock();
+    return;
+  }
   const box = $('dunskaList');
   box.replaceChildren();
   box.textContent = 'Wczytuję…';
@@ -141,4 +157,36 @@ function showDunskaQr(result) {
 }
 function printDunskaQr() {
   window.print();
+}
+
+async function dunskaTab(tab) {
+  DUNSKA_TAB = tab === 'odbior' && ROLES.includes('RECEIVE_DUNSKA') ? 'odbior' : 'braki';
+  await openDunska();
+}
+async function loadDunskaLowStock() {
+  const token = PIN, version = DUNSKA_VERSION, request = ++DUNSKA_LOW_VERSION;
+  const box = $('dunskaLowStockItems');
+  box.replaceChildren();
+  box.textContent = 'Wczytuję…';
+  try {
+    const result = await api('apiGetLowStock', token);
+    if (token !== PIN || version !== DUNSKA_VERSION || request !== DUNSKA_LOW_VERSION) return;
+    const time = new Date(result.dataTime);
+    const age = Number.isFinite(time.getTime()) ? Math.max(0, Math.floor((Date.now() - time.getTime()) / 60000)) : null;
+    $('dunskaLowStockMeta').textContent = 'Źródło: ' + (result.source || 'brak danych') +
+      (age === null ? '' : ' · ' + time.toLocaleString('pl-PL') + ' · wiek: ' + age + ' min');
+    $('dunskaLowStockWarning').textContent = result.stale ? 'Dane nieaktualne — sprawdź czytnik lub wczytaj zapasowy CSV.' : '';
+    $('dunskaLowStockWarning').hidden = !result.stale;
+    box.textContent = '';
+    for (const item of result.items) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      row.textContent = item.sku + ' · ' + item.name + ' · brakuje: ' + item.deficit +
+        ' · Duńska: ' + item.stanDunska + ' / min. ' + item.stanMin + ' · Brzeźnicka: ' + item.stanBrzeznicka;
+      box.appendChild(row);
+    }
+    if (!result.items.length) box.textContent = result.dataTime ? 'Brak produktów poniżej minimum.' : 'Brak danych z czytnika lub importu.';
+  } catch (error) {
+    if (token === PIN && version === DUNSKA_VERSION && request === DUNSKA_LOW_VERSION) box.textContent = error.message;
+  }
 }

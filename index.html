@@ -155,7 +155,7 @@
   <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
   <button class="btn sec" onclick="openInventories()">Inwentaryzacja</button>
   <button class="btn sec" onclick="openProducts()">Lista produktów</button>
-  <button class="btn sec" id="btnDunska" hidden onclick="openDunska()">Odbiór Duńska</button>
+  <button class="btn sec" id="btnDunska" hidden onclick="openDunska()">Duńska · odbiór i braki</button>
   <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
@@ -163,12 +163,16 @@
 
 <section class="screen" id="scrDunska">
   <div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openDunska()">Odśwież</button></div>
-  <h2>Odbiór Duńska</h2><p>Wybierz dostawę w drodze lub zeskanuj jej kod QR.</p>
+  <h2>Duńska</h2>
+  <div class="bar"><button class="btn sec" id="dunskaReceiverTab" onclick="dunskaTab('odbior')">Odbiór</button><button class="btn sec" onclick="dunskaTab('braki')">Braki</button></div>
+  <div id="dunskaLowStock" hidden><p id="dunskaLowStockMeta"></p><p id="dunskaLowStockWarning" role="status"></p><div id="dunskaLowStockItems"></div></div>
+  <div id="dunskaPending">
   <button class="btn sec" onclick="scanDunska()">Skanuj QR dostawy</button>
   <label class="btn sec">Zdjęcie QR<input type="file" accept="image/*" capture="environment" hidden onchange="photoDunska(this.files[0]);this.value=''" aria-label="Zdjęcie QR dostawy"></label>
   <div id="dunskaCamera" hidden><video id="dunskaVideo" autoplay playsinline muted style="width:100%"></video><button class="btn sec" onclick="barcodeScanner.stop();$('dunskaCamera').hidden=true">Zatrzymaj kamerę</button></div>
   <label for="dunskaRawId">Kod lub ID dostawy</label><input id="dunskaRawId" placeholder="DOSTAWA-DUNSKA:Dxxxxxxx"><button class="btn sec" onclick="selectDunska($('dunskaRawId').value)">Otwórz dostawę</button>
   <div id="dunskaList"></div><div id="dunskaForm" hidden><h3 id="dunskaTitle"></h3><div id="dunskaItems"></div><button class="btn" id="dunskaAccept" onclick="acceptDunska()">Potwierdź odbiór</button></div>
+</div>
 </section>
 <section class="screen" id="scrDunskaQr"><button class="link" onclick="show('scrHome')">← Wróć</button><h2 id="dunskaQrTitle"></h2><div id="dunskaQrImage"></div><p id="dunskaQrText"></p><button class="btn" onclick="printDunskaQr()">Drukuj QR dostawy</button><button class="btn sec" onclick="openToCount()">Policz, co zostało</button></section>
 <section class="screen" id="scrToCount"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openToCount()">Odśwież</button></div><h2>Policz, co zostało</h2><p>Wpisz liczbę sztuk, które są teraz na półce.</p><div id="toCountList"></div></section>
@@ -422,7 +426,7 @@ async function login(pin){
   }
 }
 async function afterLogin(offline){
-  $('btnDunska').hidden = !ROLES.includes('RECEIVE_DUNSKA');
+  $('btnDunska').hidden = false;
   $('btnApprovals').hidden = !ROLES.includes('APPROVE_IN');
   if (!offline && ROLES.includes('APPROVE_IN')) refreshApprovalCount();
   $('who').textContent = ME;
