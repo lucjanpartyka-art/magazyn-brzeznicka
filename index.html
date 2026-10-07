@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Magazyn">
 <meta name="theme-color" content="#1C2530">
 <title>Liczenie towaru — Brzeźnicka</title>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Bez Google Fonts: żadnych połączeń z zewnętrznymi serwerami przy otwarciu aplikacji; czcionka systemowa. -->
 <style>
   :root{
     --bg:#F6F5F1; --surface:#FFFFFF; --surface-alt:#F0EEE8;
@@ -129,7 +129,7 @@
 <body>
 <header class="top">
   <div><h1>📦 Liczenie towaru</h1><p>Magazyn Brzeźnicka</p></div>
-  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja 2026.10.06.4</small></div>
+  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja audytowa 2026.10.07 — niewdrożona</small></div>
 </header>
 
 <main>
@@ -138,6 +138,7 @@
   <div class="login">
     <h2 id="loginTitle">Wpisz swój PIN</h2>
     <p class="hint">8 cyfr od administratora</p>
+    <label for="employeeId">Identyfikator pracownika</label><input id="employeeId" autocomplete="username" placeholder="EMP-…">
     <input class="pin" id="pinInput" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
     <div class="hint" id="loginMsg" style="margin-top:10px;"></div>
   </div>
@@ -150,10 +151,14 @@
     <button class="out" onclick="openDocs('EXPORT')"><b>⬆ EXPORT</b><span>Towar wyjeżdża do klienta — liczę wydanie</span></button>
     <button class="price" id="btnHomePrice" hidden onclick="openPriceOnly()"><b>💰 CENA</b><span>Sprawdź cenę hurt i stan po zeskanowaniu</span></button>
   </div>
+  <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
+  <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
 </section>
 
+<section class="screen" id="scrToCount"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openToCount()">Odśwież</button></div><h2>Policz, co zostało</h2><p>Wpisz liczbę sztuk, które są teraz na półce.</p><div id="toCountList"></div></section>
+<section class="screen" id="scrApprovals"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openApprovals()">Odśwież</button></div><h2>Do zatwierdzenia</h2><div id="approvalList"></div></section>
 <!-- LISTA DOKUMENTÓW -->
 <section class="screen" id="scrDocs">
   <div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="loadDocs()">Odśwież</button></div>
@@ -267,13 +272,15 @@
 <div class="sheet-bg" id="sheetBg"><div class="sheet"><h3 id="shTitle"></h3><p id="shBody"></p><div id="shExtra"></div><div class="stack" id="shActions"></div></div></div>
 
 <script src="barcode-scanner.js?v=20261005-2"></script>
-<script src="photo-name.js?v=20261006-4"></script>
+<script src="photo-name.js?v=20261007-1"></script>
 <script>
 /* ================= konfiguracja ================= */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwxOwnfYuq4g-H766DWBrHkQn44SGzhZVUpQ4cyPztGuKekq6L0lXLQbnxfC3-G9R45YA/exec';
 const IN_GAS = typeof google !== 'undefined' && google.script && google.script.run;
 
 /* ================= stan ================= */
+let USER_ID = null;
+let ROLES = [];
 let PIN = null, ME = null, CAN_PRICE = false, DOC = null, DOC_TYPE = 'DOSTAWA';
 let MODE = 'count';           // count | pri  (pri = tryb CENA)
 let PRICE_ONLY = false;       // CENA z ekranu startowego, bez dokumentu
@@ -355,17 +362,26 @@ $('pinInput').addEventListener('input', () => { const p = $('pinInput'); p.value
 async function login(pin){
   const msg = $('loginMsg'); msg.textContent = 'Sprawdzam…'; msg.className = 'hint';
   try {
-    const r = await api('apiLogin', pin);
-    PIN = pin; ME = r.name; CAN_PRICE = !!r.canPrice;
-    lsSet('mg_pin', pin); lsSet('mg_name', ME); lsSet('mg_price', CAN_PRICE ? '1' : '');
+    const r = pin.startsWith('SESSION-') ? Object.assign(await api('apiSession', pin), {token:pin}) : await api('apiLogin', pin, $('employeeId').value.trim());
+    ROLES = r.roles || []; lsSet('mg_roles',JSON.stringify(ROLES)); PIN = r.token; USER_ID = r.id; ME = r.name; CAN_PRICE = !!r.canPrice;
+    lsSet('mg_pin', null); lsSet('mg_session', PIN); lsSet('mg_user_id', USER_ID); lsSet('mg_name', ME); lsSet('mg_price', CAN_PRICE ? '1' : '');
+    // Identyfikator (nie PIN) zostaje na telefonie, żeby nie wpisywać go przy każdym logowaniu.
+    lsSet('mg_last_id', USER_ID);
     afterLogin();
   } catch(e){
     $('pinInput').value = '';
-    if (isNet(e) && pin === lsGet('mg_pin')) { PIN = pin; ME = lsGet('mg_name'); CAN_PRICE = !!lsGet('mg_price'); afterLogin(true); toast('Brak internetu — pracujesz offline'); return; }
+    // Zapisana sesja bez zasięgu: praca offline; serwer i tak sprawdzi sesję przy wysyłce kolejki.
+    if (isNet(e) && pin.startsWith('SESSION-') && lsGet('mg_user_id')) {
+      ROLES = JSON.parse(lsGet('mg_roles') || '[]'); PIN = pin; USER_ID = lsGet('mg_user_id'); ME = lsGet('mg_name'); CAN_PRICE = !!lsGet('mg_price');
+      afterLogin(true); toast('Brak internetu — pracujesz offline'); return;
+    }
+    if (pin.startsWith('SESSION-')) { lsSet('mg_session', null); msg.textContent = 'Sesja wygasła — wpisz PIN'; msg.className = 'hint'; return; }
     msg.textContent = isNet(e) ? 'Brak internetu — spróbuj za chwilę' : e.message; msg.className = 'hint bad';
   }
 }
 async function afterLogin(offline){
+  $('btnApprovals').hidden = !ROLES.includes('APPROVE_IN');
+  if (!offline && ROLES.includes('APPROVE_IN')) refreshApprovalCount();
   $('who').textContent = ME;
   $('btnHomePrice').hidden = !CAN_PRICE;
   $('loginMsg').textContent = '';
@@ -384,7 +400,8 @@ async function afterLogin(offline){
 }
 function logout(reason){
   stopScanner();
-  PIN = ME = DOC = null; ['mg_pin','mg_name','mg_price','mg_docjson','mg_draft'].forEach(k => lsSet(k, null));
+  if (PIN) api('apiLogout', PIN).catch(() => {});
+  ROLES = []; USER_ID = null; PIN = ME = DOC = null; ['mg_pin','mg_session','mg_user_id','mg_name','mg_price','mg_roles','mg_docjson','mg_draft'].forEach(k => lsSet(k, null));
   $('who').textContent = ''; show('scrLogin');
   if (reason) { $('loginMsg').textContent = reason; $('loginMsg').className = 'hint bad'; }
 }
@@ -401,7 +418,7 @@ async function loadDocs(){
   const box = $('docsList'); box.innerHTML = '<div class="loading"><div class="spin"></div>Wczytuję…</div>';
   try {
     const docs = await api('apiListDocs', PIN, DOC_TYPE);
-    box.innerHTML = docs.length ? docs.map(d => `<div class="card tap" onclick="joinDoc('${esc(d.id)}')"><b>${esc(d.partner)}</b><div class="sub">${esc(d.date)} · ${d.participants.map(p => esc(p.name) + (p.status === 'ZAKOŃCZYŁ' ? ' ✓' : '')).join(', ') || 'nikt jeszcze nie liczy'}</div>${d.requireExpiry ? '<span class="tag warn">Data ważności obowiązkowa</span>' : ''}</div>`).join('')
+    box.innerHTML = docs.length ? docs.map(d => `<div class="card tap" data-doc-id="${esc(d.id)}"><b>${esc(d.partner)}</b><div class="sub">${esc(d.date)} · ${d.participants.map(p => esc(p.name) + (p.status === 'ZAKOŃCZYŁ' ? ' ✓' : '')).join(', ') || 'nikt jeszcze nie liczy'}</div>${d.requireExpiry ? '<span class="tag warn">Data ważności obowiązkowa</span>' : ''}</div>`).join('')
       : `<p class="hint">Nic nie jest teraz liczone. Wpisz ${DOC_TYPE === 'DOSTAWA' ? 'dostawcę' : 'odbiorcę'} poniżej.</p>`;
   } catch(e){ box.innerHTML = `<p class="hint bad">${esc(e.message)}</p>`; }
 }
@@ -523,9 +540,9 @@ async function readPhotoName(){
   if (nameReading || !photo.front || !cur) return;
   nameReading = true; nameSuggestion = ''; $('btnUseName').hidden = true;
   $('btnReadName').hidden = false; $('btnReadName').disabled = true;
-  const product = cur, owner = ME, docId = DOC && DOC.id, image = photo.front;
+  const product = cur, owner = USER_ID, docId = DOC && DOC.id, image = photo.front;
   const initialName = $('cNameIn').value;
-  const current = () => cur === product && owner === ME && docId === (DOC && DOC.id) && photo.front === image;
+  const current = () => cur === product && owner === USER_ID && docId === (DOC && DOC.id) && photo.front === image;
   const progress = message => { if(current()){ $('nameHint').textContent = message; $('nameHint').className = 'hint'; } };
   // Dwa silniki WASM naraz nie są potrzebne podczas odczytu etykiety.
   barcodeScanner.destroy();
@@ -664,7 +681,8 @@ async function mergeInto(dup, item){
   } catch(e){ toast('Brak połączenia — dodaję jako osobną pozycję'); enqueue(item); }
 }
 async function enqueue(item){
-  await qPut({ clientId: item.clientId, docId: DOC.id, item });
+  if (!USER_ID) throw new Error('Zaloguj się ponownie');
+  await qPut({ ownerId: USER_ID, server: API_URL, clientId: item.clientId, docId: DOC.id, item });
   myItems.unshift(Object.assign({ pending: true }, item)); renderItems();
   toast('Dodano ✅'); resetScan(); updateQbar(); processQueue();
 }
@@ -673,17 +691,20 @@ async function enqueue(item){
 let sending = false;
 async function processQueue(){
   if (sending || !PIN) return;
+  const token = PIN, ownerId = USER_ID;
   sending = true;
   try {
     for (const q of await qAll()) {
-      if (q.error) continue;
+      if (PIN !== token || USER_ID !== ownerId) break;
+      if (q.error || q.ownerId !== ownerId || q.server !== API_URL) continue;
       try {
         if (q.item.needSku && !q.item.sku) {
-          const r = await api('apiNewSku', PIN, q.item.ean, q.item.name, q.item.photoFront);
+          const r = await api('apiNewSku', token, q.item.ean, q.item.name, q.item.photoFront);
           q.item.sku = r.sku; q.item.needSku = false; await qPut(q);
           if (!r.existing) toast('Nowy produkt: ' + r.sku);
         }
-        await api('apiAddItem', PIN, q.docId, q.item);
+        if (PIN !== token || USER_ID !== ownerId) break;
+        await api('apiAddItem', token, q.docId, q.item);
         await qDel(q.clientId);
       } catch(e){
         if (isNet(e)) break;
@@ -693,11 +714,11 @@ async function processQueue(){
   } finally {
     sending = false; updateQbar();
     if (DOC) refreshItems(true);
-    if ((await qAll()).some(q => !q.error)) setTimeout(processQueue, 15000);
+    if ((await qAll()).some(q => !q.error && q.ownerId === USER_ID && q.server === API_URL)) setTimeout(processQueue, 15000);
   }
 }
 async function updateQbar(){
-  const all = await qAll(); const w = all.filter(q => !q.error).length, f = all.filter(q => q.error).length;
+  const all = (await qAll()).filter(q => q.ownerId === USER_ID && q.server === API_URL); const w = all.filter(q => !q.error).length, f = all.filter(q => q.error).length;
   $('qbar').hidden = !(w || f);
   $('qbar').textContent = (w ? `⏳ Czeka na wysłanie: ${w}` : '') + (f ? `${w ? ' · ' : ''}⚠ Odrzucone: ${f} (zobacz „Moje”)` : '');
 }
@@ -708,14 +729,16 @@ async function refreshItems(silent){
   if (!DOC) return;
   try {
     const server = await api('apiMyItems', PIN, DOC.id);
-    const queued = (await qAll()).filter(q => q.docId === DOC.id).map(q => Object.assign({ pending: !q.error, error: q.error }, q.item));
+    const queued = (await qAll()).filter(q => q.docId === DOC.id && q.ownerId === USER_ID && q.server === API_URL).map(q => Object.assign({ pending: !q.error, error: q.error }, q.item));
     myItems = queued.concat(server); renderItems();
   } catch(e){ if (!silent) renderItems(); }
 }
+$('docsList').addEventListener('click', e => { const row = e.target.closest('[data-doc-id]'); if(row) joinDoc(row.dataset.docId); });
+$('listBox').addEventListener('click', e => { const row = e.target.closest('[data-item-id]'); if(row) itemMenu(row.dataset.itemId); });
 function renderItems(){
   $('listCount').textContent = myItems.length;
   $('listSum').textContent = `Pozycji: ${myItems.length} · Sztuk: ${myItems.reduce((s,i) => s + (Number(i.qty) || 0), 0)}`;
-  $('listBox').innerHTML = myItems.length ? myItems.map(i => `<div class="item" onclick="itemMenu('${esc(i.clientId)}')"><div class="n">${esc(i.name)}<small>${esc(i.sku || 'nowe SKU…')}${i.ean ? ' · ' + esc(i.ean) : ''}${i.expiry ? ' · ważne do ' + esc(i.expiry) : ''}${i.pending ? ' · ⏳ czeka' : ''}${i.error ? ' · ⚠ ' + esc(i.error) : ''}</small></div><div class="q">${esc(i.qty)} szt.</div></div>`).join('') : '<p class="hint">Nic jeszcze nie dodałeś.</p>';
+  $('listBox').innerHTML = myItems.length ? myItems.map(i => `<div class="item" data-item-id="${esc(i.clientId)}"><div class="n">${esc(i.name)}<small>${esc(i.sku || 'nowe SKU…')}${i.ean ? ' · ' + esc(i.ean) : ''}${i.expiry ? ' · ważne do ' + esc(i.expiry) : ''}${i.pending ? ' · ⏳ czeka' : ''}${i.error ? ' · ⚠ ' + esc(i.error) : ''}</small></div><div class="q">${esc(i.qty)} szt.</div></div>`).join('') : '<p class="hint">Nic jeszcze nie dodałeś.</p>';
 }
 function itemMenu(id){
   const it = myItems.find(i => i.clientId === id); if (!it) return;
@@ -740,7 +763,7 @@ function renderStatus(){
   const done = DOC.myStatus === 'ZAKOŃCZYŁ';
   $('btnFinish').hidden = done; $('btnResume').hidden = !done; $('btnAdd').disabled = done;
 }
-async function queueForDoc(){ return (await qAll()).filter(q => q.docId === DOC.id); }
+async function queueForDoc(){ return (await qAll()).filter(q => q.docId === DOC.id && q.ownerId === USER_ID && q.server === API_URL); }
 async function finishMine(){
   if ((await queueForDoc()).length) { processQueue(); return toast('Poczekaj, aż wszystkie pozycje się wyślą'); }
   sheet('Zakończyć Twoje liczenie?', 'Możesz je wznowić, dopóki dokument nie jest zamknięty.', [
@@ -758,10 +781,14 @@ async function doClose(force, pinOverride){
   if (cpin.length !== 8) return toast('Wpisz 8 cyfr PIN');
   hideSheet();
   try {
-    const r = await api('apiCloseDoc', PIN, DOC.id, cpin, force);
+    const reason = force ? prompt('Podaj przyczynę wymuszenia zamknięcia (minimum 10 znaków)') : '';
+    if (force && (!reason || reason.trim().length < 10)) return toast('Zamknięcie anulowane — brak przyczyny');
+    const r = await api('apiCloseDoc', PIN, DOC.id, cpin, force, reason);
     if (r.needsForce) return sheet('Nie wszyscy skończyli', `Jeszcze liczą: ${r.pending.join(', ')}. Ich dotychczasowe pozycje też zostaną zaksięgowane.`, [
       { label: 'Zamknij mimo to', cls: 'danger', fn: () => doClose(true, cpin) }, { label: 'Poczekam', cls: 'sec' }]);
+    if(r.status === 'DO_ZATWIERDZENIA') { toast('Dokument czeka na zatwierdzenie'); leaveDoc(); refreshApprovalCount(); return; }
     toast(`Zamknięto ✅ ${r.items} pozycji, ${r.qty} szt.`); leaveDoc();
+    if(r.toCount && r.toCount.length) await openToCount(r.toCount);
   } catch(e){ toast(e.message); }
 }
 
@@ -769,13 +796,13 @@ async function doClose(force, pinOverride){
 const draftFields = ['cNameIn','cQty','cExp','cLot','cPrice','cNotes'];
 function saveDraft(){
   if (!DOC || !ME || !cur) return;
-  const draft = { owner:ME, docId:DOC.id, cur, fields:Object.fromEntries(draftFields.map(id=>[id,$(id).value])), photo };
+  const draft = { owner:USER_ID, server:API_URL, docId:DOC.id, cur, fields:Object.fromEntries(draftFields.map(id=>[id,$(id).value])), photo };
   lsSet('mg_draft', JSON.stringify(draft));
 }
 function restoreDraft(saved){
   if (!saved || !DOC) return;
   try {
-    const draft = JSON.parse(saved); if (draft.owner !== ME || draft.docId !== DOC.id || !draft.cur) return;
+    const draft = JSON.parse(saved); if (draft.owner !== USER_ID || draft.server !== API_URL || draft.docId !== DOC.id || !draft.cur) return;
     cur = draft.cur; showCount();
     for (const id of draftFields) $(id).value = draft.fields[id] || (id === 'cQty' ? '1' : '');
     photo = draft.photo || {front:null,exp:null};
@@ -791,11 +818,14 @@ document.addEventListener('visibilitychange', () => {
   // Powrót z aparatu nie uruchamia drugiego strumienia ani okna uprawnień.
 });
 (function init(){
-  const s = lsGet('mg_pin');
+  lsSet('mg_pin', null);
+  $('employeeId').value = lsGet('mg_last_id') || '';
+  const s = lsGet('mg_session');
   if (s) { $('pinInput').hidden = true; $('loginTitle').textContent = 'Wznawiam pracę…'; $('loginMsg').textContent = 'Sprawdzam zapisaną sesję'; login(s).finally(() => { $('pinInput').hidden = false; $('loginTitle').textContent = 'Wpisz swój PIN'; }); }
   else setTimeout(() => $('pinInput').focus(), 200);
   updateQbar();
 })();
 </script>
+<script src="screens/zatwierdzenia.js"></script>
 </body>
 </html>
