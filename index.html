@@ -232,6 +232,11 @@
     </div>
 
     <div id="scanArea">
+      <div class="field" id="inventoryCountPicker" hidden>
+        <label for="inventoryCountSku">Wybierz SKU z zakresu inwentaryzacji</label>
+        <select id="inventoryCountSku" onchange="chooseInventoryCountProduct(this.value)"></select>
+        <p class="hint">Możesz policzyć także wycofany produkt lub wpisać zero, gdy nie ma go na półce.</p>
+      </div>
       <div class="scanner" id="scanner" hidden><video id="video" playsinline muted></video><div class="frame"></div><div class="msg" id="scanMsg">Wyceluj w kod kreskowy</div></div>
       <div class="scanfallback" id="scanFallback">
         <button class="btn sec" id="btnLiveScan" onclick="startScanner(true)">Uruchom skaner na żywo</button>
@@ -480,6 +485,9 @@ function enterDoc(doc){
   DOC = doc; DOC_TYPE = doc.type; PRICE_ONLY = false; lsSet('mg_docjson', JSON.stringify(doc));
   const isIn = doc.type === 'DOSTAWA', inv=doc.type==='INWENTARYZACJA';
   INVENTORY_SCANNING=false;
+  $('cQty').min = inv ? '0' : '1';
+  $('inventoryCountPicker').hidden = !inv;
+  if (typeof renderInventoryCountProducts === 'function') renderInventoryCountProducts(doc);
   $('cExpField').hidden=inv; $('cLotField').hidden=inv; $('phExp').hidden=inv; $('expHint').hidden=inv;
   $('btnClose').hidden=inv?!ROLES.includes('INVENTORY'):!ROLES.includes('POST_STOCK');
   $('docHead').hidden = false; $('tabsBar').hidden = false; $('btnBackPrice').hidden = true;
@@ -657,10 +665,13 @@ function onCode(ean){
 function noCode(){ chosen(null, ''); }
 function chosen(sku, ean){
   if(INVENTORY_SCANNING)return inventoryScanned(sku);
+  const inventory = DOC && DOC.type === 'INWENTARYZACJA';
+  if (inventory && (!sku || !(DOC.inventorySkus || []).includes(sku))) return toast('SKU poza zakresem inwentaryzacji');
   stopScanner();
-  const p = sku ? CAT.bySku.get(sku) : null;
-  cur = { sku: sku || '', ean: ean || (p && p.eans[0]) || '', name: p ? p.name : '', isNew: !p };
-  if(DOC && DOC.type==='INWENTARYZACJA' && (!sku || !DOC.inventorySkus.includes(sku)))return toast('SKU poza zakresem inwentaryzacji');
+  const scoped = inventory && (DOC.inventoryProducts || []).find(product => product.sku === sku);
+  const p = scoped || (sku ? CAT.bySku.get(sku) : null);
+  const mainEan = p && (p.ean || (p.eans && p.eans[0]));
+  cur = { sku: sku || '', ean: ean || mainEan || '', name: p ? p.name : '', isNew: !p };
   if (MODE === 'pri') return showPrice();
   showCount();
 }
@@ -712,7 +723,12 @@ function showCount(){
   if(cur.isNew && cur.ean) unknownEan();
   setTimeout(() => { $('cQty').focus(); $('cQty').select(); }, 50);
 }
-function step(d){ const el = $('cQty'); let v = parseInt(el.value || '1', 10) + d; if (isNaN(v) || v < 1) v = 1; el.value = v; }
+function step(d){
+  const el = $('cQty'), minimum = DOC && DOC.type === 'INWENTARYZACJA' ? 0 : 1;
+  const current = Number(el.value);
+  const next = Number.isSafeInteger(current) ? current + d : minimum;
+  el.value = Math.max(minimum, next);
+}
 function resetScan(){
   if (photoBusy) return;
   cur = null; lsSet('mg_draft', null); $('priceView').hidden = true; $('countView').hidden = true; $('scanHint').textContent = '';
@@ -726,14 +742,15 @@ async function addItem(){
   const name = cur.isNew ? $('cNameIn').value.trim() : cur.name;
   const item = {
     clientId: newId(), sku: cur.sku, ean: cur.ean, name,
-    qty: parseInt($('cQty').value || '0', 10), expiry: $('cExp').value, lot: $('cLot').value.trim(),
+    qty: Number($('cQty').value), expiry: $('cExp').value, lot: $('cLot').value.trim(),
     price: DOC.type === 'EXPORT' ? $('cPrice').value.trim().replace(',', '.') : '', notes: $('cNotes').value.trim(),
     photoFront: cur.isNew ? photo.front : null, photoExpiry: photo.exp, needSku: cur.isNew
   };
   if(DOC.type==='INWENTARYZACJA'){item.expiry='';item.lot='';item.photoExpiry=null;}
   if (cur.isNew && !item.photoFront) return toast('Nowy produkt — zrób zdjęcie przodu');
   if (!item.name) return toast('Wpisz nazwę produktu');
-  if (!item.qty || item.qty < 1) return toast('Wpisz ilość');
+  const minimum = DOC.type === 'INWENTARYZACJA' ? 0 : 1;
+  if (!$('cQty').value.trim() || !Number.isSafeInteger(item.qty) || item.qty < minimum || item.qty > 1000000) return toast('Wpisz poprawną ilość całkowitą');
   if (DOC.requireExpiry && !item.expiry && !item.lot) return toast('Dla tego odbiorcy wpisz datę ważności lub kod');
   if (item.price !== '' && (isNaN(Number(item.price)) || Number(item.price) < 0)) return toast('Zła cena');
   const dup = !cur.isNew && myItems.find(i => i.sku === item.sku && !i.pending && !i.error);

@@ -1,4 +1,26 @@
 let INVENTORY_SCANNING=false;
+function renderInventoryCountProducts(doc) {
+  const picker = $('inventoryCountPicker'), select = $('inventoryCountSku');
+  picker.hidden = doc.type !== 'INWENTARYZACJA';
+  select.textContent = '';
+  if (picker.hidden) return;
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = 'Wybierz produkt…';
+  select.appendChild(empty);
+  for (const product of doc.inventoryProducts || []) {
+    const option = document.createElement('option');
+    option.value = product.sku;
+    option.textContent = product.sku + ' · ' + product.name + (product.active === false ? ' (wycofany)' : '');
+    select.appendChild(option);
+  }
+}
+function chooseInventoryCountProduct(sku) {
+  if (!DOC || DOC.type !== 'INWENTARYZACJA' || !sku) return;
+  const product = (DOC.inventoryProducts || []).find(candidate => candidate.sku === sku);
+  if (!product) return toast('SKU poza zakresem inwentaryzacji');
+  chosen(product.sku, product.ean || '');
+}
 async function openInventories() {
   INVENTORY_SCANNING=false;
   show('scrInventory');
