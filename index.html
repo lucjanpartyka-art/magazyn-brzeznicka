@@ -153,12 +153,39 @@
   </div>
   <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
   <button class="btn sec" onclick="openInventories()">Inwentaryzacja</button>
+  <button class="btn sec" onclick="openProducts()">Lista produktów</button>
   <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
 </section>
 
 <section class="screen" id="scrToCount"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openToCount()">Odśwież</button></div><h2>Policz, co zostało</h2><p>Wpisz liczbę sztuk, które są teraz na półce.</p><div id="toCountList"></div></section>
+<section class="screen" id="scrProducts">
+  <button class="link" onclick="show('scrHome')">← Wróć</button>
+  <h2>Lista produktów</h2>
+  <label for="productQuery">Nazwa, EAN lub SKU</label><input id="productQuery" type="search">
+  <label for="productFilter">Filtr</label><select id="productFilter" onchange="openProducts()"><option value="all">Aktywne</option><option value="stock">Na stanie</option><option value="zero">Zero</option><option value="negative">Ujemne</option><option value="toCount">Do policzenia</option><option value="inactive">Wycofane</option></select>
+  <button class="btn sec" onclick="openProducts()">Szukaj</button>
+  <button class="btn" id="productAdd" hidden onclick="editProduct(true)">Dodaj produkt</button>
+  <div id="productList"></div>
+</section>
+<section class="screen" id="scrProduct">
+  <button class="link" onclick="openProducts()">← Lista produktów</button>
+  <h2 id="productTitle"></h2><p id="productSummary"></p><div id="productLinks"></div>
+  <button class="btn sec" id="productEdit" hidden onclick="editProduct()">Edytuj</button>
+  <button class="btn sec" id="productReplace" hidden onclick="replaceProductSku()">Nowe SKU</button>
+  <button class="btn sec" id="productActive" hidden onclick="setProductActive()">Wycofaj produkt</button>
+  <h3>Ruchy (ostatnie 100)</h3><div id="productMoves"></div><h3>Historia kartoteki</h3><div id="productHistory"></div>
+</section>
+<section class="screen" id="scrProductEdit">
+  <button class="link" onclick="openProducts()">← Lista produktów</button><h2>Edycja produktu</h2>
+  <label for="productSku">SKU</label><input id="productSku">
+  <label for="productName">Nazwa</label><input id="productName">
+  <label for="productEan">EAN główny</label><input id="productEan" inputmode="numeric">
+  <label for="productEans">EAN dodatkowe (oddziel przecinkami)</label><textarea id="productEans"></textarea>
+  <label for="productLocation">Lokalizacja</label><input id="productLocation">
+  <button class="btn" onclick="saveProduct()">Zapisz</button>
+</section>
 <section class="screen" id="scrInventory"><button class="link" onclick="show('scrHome')">← Wróć</button><h2>Inwentaryzacja</h2><div id="inventoryList"></div><div id="inventoryStart" hidden><h3>Rozpocznij inwentaryzację</h3><label for="inventoryScope">Zakres</label><select id="inventoryScope"><option value="all">Cały magazyn</option><option value="skus">Lista SKU / skaner</option><option value="locations">Lokalizacje</option></select><label for="inventoryValues">SKU lub lokalizacje, po jednym w wierszu</label><textarea id="inventoryValues"></textarea><button class="btn sec" onclick="scanInventoryScope()">Skanuj SKU do zakresu</button><button class="btn" onclick="startInventory()">Rozpocznij</button></div></section>
 <section class="screen" id="scrInventoryCompare"><button class="link" onclick="openInventories()">← Inwentaryzacje</button><h2>Różnice inwentaryzacji</h2><div id="inventoryDifferences"></div><label id="inventoryZeroLabel"><input type="checkbox" id="inventoryZero">Potwierdzam zerowanie niepoliczonych SKU: <span id="inventoryZeroList"></span></label><button class="btn" id="inventoryApprove">Zatwierdź inwentaryzację</button></section>
 <section class="screen" id="scrApprovals"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openApprovals()">Odśwież</button></div><h2>Do zatwierdzenia</h2><div id="approvalList"></div></section>
@@ -839,5 +866,6 @@ document.addEventListener('visibilitychange', () => {
 </script>
 <script src="screens/zatwierdzenia.js"></script>
 <script src="screens/inwentaryzacja.js"></script>
+<script src="screens/produkty.js"></script>
 </body>
 </html>
