@@ -569,10 +569,28 @@ $('fileIn').addEventListener('change', async e => {
 
 });
 
-let nameReading = false, nameSuggestion = '';
+let nameReading = false, nameSuggestion = '', nameSuggestionSource = '';
+async function unknownEan(){
+  if (!cur || !cur.isNew || !/^[0-9]{8,14}$/.test(cur.ean)) return;
+  const product=cur, owner=USER_ID, token=PIN, docId=DOC && DOC.id, fingerprint=CAT.version;
+  const initial=$('cNameIn').value, initialPhoto=photo.front;
+  const current=()=>cur===product && owner===USER_ID && token===PIN && docId===(DOC && DOC.id) && fingerprint===CAT.version && initial===$('cNameIn').value && initialPhoto===photo.front && !nameReading;
+  $('nameHint').textContent='Szukam propozycji nazwy po EAN…';
+  try {
+    const result=await api('apiLookupEan',token,product.ean);
+    if (!current()) return;
+    const sources=['KATALOG','PAMIĘĆ','OPEN_BEAUTY_FACTS','OPEN_FOOD_FACTS','GEMINI'];
+    const name=typeof result.name==='string'?result.name.replace(/[\u0000-\u001F\u007F-\u009F]/g,'').trim().slice(0,200):'';
+    if(name && sources.includes(result.source)){
+      nameSuggestion=name; nameSuggestionSource=result.source; $('cNameIn').placeholder=name; $('btnUseName').hidden=false;
+      $('nameHint').textContent='Propozycja ('+result.source+'): '+name+'. Sprawdź i użyj propozycji albo odczytaj zdjęcie etykiety lub wpisz ręcznie.';
+    } else $('nameHint').textContent='Nie znaleziono nazwy. Zrób zdjęcie etykiety albo wpisz ją ręcznie.';
+  } catch(error){ if(current()) $('nameHint').textContent=(error.message || 'Brak internetu')+'. Zrób zdjęcie etykiety albo wpisz nazwę ręcznie.'; }
+}
+
 async function readPhotoName(){
   if (nameReading || !photo.front || !cur) return;
-  nameReading = true; nameSuggestion = ''; $('btnUseName').hidden = true;
+  nameReading = true; nameSuggestion = ''; nameSuggestionSource = ''; $('cNameIn').placeholder=''; $('btnUseName').hidden = true;
   $('btnReadName').hidden = false; $('btnReadName').disabled = true;
   const product = cur, owner = USER_ID, docId = DOC && DOC.id, image = photo.front;
   const initialName = $('cNameIn').value;
@@ -603,7 +621,7 @@ async function retryPhotoName(){
 function usePhotoName(){
   if (!nameSuggestion) return;
   $('cNameIn').value = nameSuggestion; nameSuggestion = ''; $('btnUseName').hidden = true;
-  $('nameHint').textContent = 'Użyto odczytanej nazwy — sprawdź przed dodaniem.'; $('nameHint').className = 'hint ok'; saveDraft();
+  $('nameHint').textContent = 'Użyto propozycji'+(nameSuggestionSource?' ('+nameSuggestionSource+')':' z odczytu lokalnego')+' — sprawdź przed dodaniem.'; $('nameHint').className = 'hint ok'; saveDraft();
 }
 $('cNameIn').addEventListener('input', () => {
   if (!nameReading && $('cNameIn').value.trim()) { $('nameHint').textContent = 'Nazwa wpisana — sprawdź przed dodaniem.'; $('nameHint').className = 'hint'; }
@@ -659,7 +677,7 @@ function priceToExport(){ setMode('exp', true); showCount(); }
 function showCount(){
   $('scanArea').hidden = true; $('priceView').hidden = true; $('countView').hidden = false;
   photo = { front: null, exp: null };
-  nameSuggestion = ''; $('btnUseName').hidden = true; $('btnReadName').hidden = true;
+  nameSuggestion = ''; nameSuggestionSource = ''; $('cNameIn').placeholder=''; $('btnUseName').hidden = true; $('btnReadName').hidden = true;
   $('cQty').value = '1'; $('cExp').value = ''; $('cLot').value = ''; $('cPrice').value = ''; $('cNotes').value = '';
   $('phExp').classList.remove('filled'); $('phExpTxt').textContent = DOC && DOC.requireExpiry ? 'Zdjęcie daty ważności — wymagana data lub kod' : 'Zdjęcie daty ważności — odczytam (opcja)'; $('expHint').textContent = '';
   if (cur.isNew) {
@@ -674,6 +692,7 @@ function showCount(){
     const had = myItems.find(i => i.sku === cur.sku && !i.pending && !i.error);
     if (had) $('cMeta').textContent += ' · już masz ' + had.qty + ' szt.';
   }
+  if(cur.isNew && cur.ean) unknownEan();
   setTimeout(() => { $('cQty').focus(); $('cQty').select(); }, 50);
 }
 function step(d){ const el = $('cQty'); let v = parseInt(el.value || '1', 10) + d; if (isNaN(v) || v < 1) v = 1; el.value = v; }
