@@ -1,4 +1,8 @@
-/* Odczyt etykiety na urządzeniu. Zdjęcie nie jest wysyłane do dostawcy biblioteki. */
+/* Odczyt etykiety na urządzeniu. Zdjęcie nie jest wysyłane do dostawcy biblioteki.
+   Biblioteka, rdzeń WASM i dane językowe są serwowane z tej samej strony (vendor/tesseract) — bez CDN. */
+// Położenie tego pliku (nie strony), bo moduł ładują też strony testowe z podkatalogów.
+const OCR_SCRIPT_URL = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : '';
+const ocrBase = () => new URL('vendor/tesseract/', OCR_SCRIPT_URL || document.baseURI).href;
 let photoOcrWorkerPromise;
 let photoOcrProgress = () => {};
 function withOcrTimeout(promise, milliseconds, message) {
@@ -11,9 +15,9 @@ function loadPhotoOcrLibrary() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
   return withOcrTimeout(new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/tesseract.min.js';
+    script.src = ocrBase() + 'tesseract.min.js';
     script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('Nie uruchomiono odczytu tekstu.'));
-    script.onerror = () => { script.remove(); reject(new Error('Nie pobrano modułu odczytu tekstu. Sprawdź internet i spróbuj ponownie.')); };
+    script.onerror = () => { script.remove(); reject(new Error('Nie wczytano modułu odczytu tekstu. Spróbuj ponownie.')); };
     document.head.appendChild(script);
   }), 20000, 'Pobieranie modułu odczytu trwa zbyt długo. Spróbuj ponownie.');
 }
@@ -25,8 +29,9 @@ async function recognizePhotoLocally(dataUrl, onProgress) {
       photoOcrWorkerPromise = (async () => {
         const engine = await loadPhotoOcrLibrary();
         return engine.createWorker('pol+eng', 1, {
-          workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@6.0.1/dist/worker.min.js',
-          corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@6.0.0',
+          workerPath: ocrBase() + 'worker.min.js',
+          corePath: ocrBase() + 'core',
+          langPath: ocrBase() + 'lang',
           logger: event => {
             const percent = Math.round((event.progress || 0) * 100);
             photoOcrProgress(event.status === 'recognizing text' ? `Odczytywanie etykiety na urządzeniu: ${percent}%` : 'Przygotowanie odczytu tekstu… Pierwsze uruchomienie wymaga pobrania modułu.');

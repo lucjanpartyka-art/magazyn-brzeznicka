@@ -440,10 +440,13 @@ async function afterLogin(offline){
   show('scrHome');
   loadCatalog();
   const saved = lsGet('mg_docjson');
+  // Wylogowanie lub zmiana konta w trakcie oczekiwania na serwer nie może przywrócić ekranów aplikacji.
+  const token = PIN;
   if (saved) {
     let d;
-    try { d = JSON.parse(saved); if (offline) return enterDoc(d); return enterDoc(await api('apiDocInfo', PIN, d.id)); }
+    try { d = JSON.parse(saved); if (offline) return enterDoc(d); const info = await api('apiDocInfo', PIN, d.id); if (PIN !== token) return; return enterDoc(info); }
     catch(e){
+      if (PIN !== token) return;
       if (isNet(e) && d) { toast('Brak połączenia — przywracam otwarty dokument'); return enterDoc(d); }
       if (!isNet(e)) lsSet('mg_docjson', null);
     }
@@ -483,6 +486,8 @@ async function joinDoc(id){ try { enterDoc(await api('apiJoinDoc', PIN, id)); } 
 function enterDoc(doc){
   if (doc.status !== 'OTWARTA') { lsSet('mg_docjson', null); show('scrHome'); return toast('Ten dokument jest już zamknięty'); }
   DOC = doc; DOC_TYPE = doc.type; PRICE_ONLY = false; lsSet('mg_docjson', JSON.stringify(doc));
+  // Pozycje poprzedniego dokumentu nie mogą wywołać pytania „już liczyłeś” w nowym.
+  if (ITEMS_DOC !== doc.id) { myItems = []; ITEMS_DOC = doc.id; }
   const isIn = doc.type === 'DOSTAWA', inv=doc.type==='INWENTARYZACJA';
   INVENTORY_SCANNING=false;
   $('cQty').min = inv ? '0' : '1';
@@ -815,12 +820,15 @@ async function updateQbar(){
 window.addEventListener('online', processQueue);
 
 /* ================= moje pozycje ================= */
+let ITEMS_DOC = null;
 async function refreshItems(silent){
   if (!DOC) return;
+  const docId = DOC.id;
   try {
-    const server = await api('apiMyItems', PIN, DOC.id);
-    const queued = (await qAll()).filter(q => q.docId === DOC.id && q.ownerId === USER_ID && q.server === API_URL).map(q => Object.assign({ pending: !q.error, error: q.error }, q.item));
-    myItems = queued.concat(server); renderItems();
+    const server = await api('apiMyItems', PIN, docId);
+    const queued = (await qAll()).filter(q => q.docId === docId && q.ownerId === USER_ID && q.server === API_URL).map(q => Object.assign({ pending: !q.error, error: q.error }, q.item));
+    if (!DOC || DOC.id !== docId) return; // użytkownik przeszedł do innego dokumentu w trakcie oczekiwania
+    myItems = queued.concat(server); ITEMS_DOC = docId; renderItems();
   } catch(e){ if (!silent) renderItems(); }
 }
 $('docsList').addEventListener('click', e => { const row = e.target.closest('[data-doc-id]'); if(row) joinDoc(row.dataset.docId); });
