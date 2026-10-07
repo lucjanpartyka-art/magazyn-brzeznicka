@@ -52,7 +52,7 @@ function page(storage=new Map()) {
  window:{scrollTo(){},addEventListener:(k,fn)=>events[k]=fn},navigator:{},setTimeout(){},clearTimeout(){}});
  const script=[...fs.readFileSync('index.html','utf8').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m=>m[1]).join('\n');
  vm.runInContext(script.slice(0,script.lastIndexOf('(function init(){')),context);
- vm.runInContext("refreshItems=()=>{};processQueue=()=>{};ME='Tester';",context);
+ vm.runInContext("refreshItems=()=>{};var realProcessQueue=processQueue;processQueue=()=>{};ME='Tester';USER_ID='EMP-Tester001';",context);
  return {run:s=>vm.runInContext(s,context),el,events,storage,context};
 }
 test('przeładowanie po aparacie odtwarza produkt, ilość i pola we własnym dokumencie',()=>{
@@ -62,7 +62,7 @@ test('przeładowanie po aparacie odtwarza produkt, ilość i pola we własnym do
 });
 test('formularz innego użytkownika nie jest przywracany',()=>{
  const a=page();a.run("DOC={id:'D'};cur={ean:'8936020052557',name:'Produkt'};saveDraft()");
- const b=page(a.storage);b.run("ME='Inna osoba';enterDoc({id:'D',status:'OTWARTA',type:'DOSTAWA',participants:[],myStatus:'LICZY'})");assert.equal(b.run('cur'),null);
+ const b=page(a.storage);b.run("ME='Inna osoba';USER_ID='EMP-Another01';enterDoc({id:'D',status:'OTWARTA',type:'DOSTAWA',participants:[],myStatus:'LICZY'})");assert.equal(b.run('cur'),null);
 });
 test('powrót z systemowej kamery nie startuje drugiego skanera',()=>{
  const a=page();a.run('photoPickPending=true');a.events.visibilitychange();assert.equal(a.run('scanning'),false);
@@ -125,4 +125,30 @@ test('OCR skraca błędny odczyt ze zrzutu bez zgadywania liter',()=>{
  const {nameFromOcrText}=require('../photo-name.js');
  const raw='oe" ETC EN aracetamol Zentiva 500 mg tabletki , Paracetamolum z: * W krótkotrwałym objawowym leczeniu łagodnego do umiarkowanego bólu';
  assert.equal(nameFromOcrText(raw),'oe" ETC EN aracetamol Zentiva 500 mg tabletki');
+});
+
+test('kolejka A nie jest wysyłana jako B; stara kolejka bez właściciela jest zatrzymana',async()=>{
+ const p=page();p.context.jobs=[{clientId:'A',ownerId:'EMP-A',server:p.run('API_URL'),item:{}},{clientId:'legacy',item:{}}];p.context.sent=[];
+ p.run("processQueue=realProcessQueue;PIN='SESSION-B';USER_ID='EMP-B';qAll=async()=>jobs;qPut=async()=>{};qDel=async()=>{};api=async(...args)=>sent.push(args);updateQbar=()=>{};");
+ await p.run('processQueue()');assert.equal(p.context.sent.length,0);
+});
+test('zmiana konta podczas tworzenia SKU nie wysyła zapisu z nową sesją',async()=>{
+ const p=page();p.context.jobs=[{clientId:'A',ownerId:'EMP-A',server:p.run('API_URL'),item:{needSku:true}}];p.context.sent=[];
+ p.run("processQueue=realProcessQueue;PIN='SESSION-A';USER_ID='EMP-A';qAll=async()=>jobs;qPut=async()=>{};qDel=async()=>{};updateQbar=()=>{};api=async(fn,token)=>{sent.push([fn,token]);PIN='SESSION-B';USER_ID='EMP-B';return {sku:'S',existing:true}};");
+ await p.run('processQueue()');assert.equal(p.context.sent.length,1);assert.equal(p.context.sent[0][1],'SESSION-A');
+});
+test('HTML nie umieszcza identyfikatorów rekordów w kodzie onclick',()=>{
+ const html=fs.readFileSync('index.html','utf8');assert.doesNotMatch(html,/onclick="(?:joinDoc|itemMenu)\('/);
+});
+
+test('QR transportu: tylko dokładny prefiks, format QR i ID',()=>{
+ assert.equal(validCode('DOSTAWA-DUNSKA:D123abcd','QRCode'),'DOSTAWA-DUNSKA:D123abcd');
+ for(const [code,format] of [['DOSTAWA-DUNSKA:D123abcd','Code128'],['https://obcy.test/D123abcd','QRCode'],['DOSTAWA-DUNSKA:D123abcdextra','QRCode']])assert.equal(validCode(code,format),'');
+ assert.match(fs.readFileSync('barcode-worker.js','utf8'),/'QRCode'/);
+});
+test('lokalny QR generator i rzeczywisty dekoder ZXing',async()=>{
+ const qr=require('../vendor/qrcode-2.0.4.js')(0,'M');qr.addData('DOSTAWA-DUNSKA:D123abcd');qr.make();
+ const bytes=Buffer.from(qr.createDataURL(8,32).split(',')[1],'base64');
+ const results=await z.readBarcodes(bytes,{formats:['QRCode']});
+ assert.ok(results.some(r=>r.text==='DOSTAWA-DUNSKA:D123abcd'));
 });

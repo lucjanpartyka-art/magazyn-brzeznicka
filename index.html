@@ -124,6 +124,7 @@
   .spin{width:18px; height:18px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:sp 0.8s linear infinite;}
   @keyframes sp{to{transform:rotate(360deg);}}
   @media (prefers-reduced-motion: reduce){ .spin{animation:none;} .toast{transition:none;} }
+@media print { body > :not(main) { display:none !important; } .screen { display:none !important; } #scrDunskaQr { display:block !important; } #scrDunskaQr button, .top, .bottom { display:none !important; } #scrDunskaQr { color:#000; background:#fff; } #dunskaQrImage svg { width:80mm; height:80mm; } }
 </style>
 </head>
 <body>
@@ -154,11 +155,22 @@
   <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
   <button class="btn sec" onclick="openInventories()">Inwentaryzacja</button>
   <button class="btn sec" onclick="openProducts()">Lista produktów</button>
+  <button class="btn sec" id="btnDunska" hidden onclick="openDunska()">Odbiór Duńska</button>
   <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
 </section>
 
+<section class="screen" id="scrDunska">
+  <div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openDunska()">Odśwież</button></div>
+  <h2>Odbiór Duńska</h2><p>Wybierz dostawę w drodze lub zeskanuj jej kod QR.</p>
+  <button class="btn sec" onclick="scanDunska()">Skanuj QR dostawy</button>
+  <label class="btn sec">Zdjęcie QR<input type="file" accept="image/*" capture="environment" hidden onchange="photoDunska(this.files[0]);this.value=''" aria-label="Zdjęcie QR dostawy"></label>
+  <div id="dunskaCamera" hidden><video id="dunskaVideo" autoplay playsinline muted style="width:100%"></video><button class="btn sec" onclick="barcodeScanner.stop();$('dunskaCamera').hidden=true">Zatrzymaj kamerę</button></div>
+  <label for="dunskaRawId">Kod lub ID dostawy</label><input id="dunskaRawId" placeholder="DOSTAWA-DUNSKA:Dxxxxxxx"><button class="btn sec" onclick="selectDunska($('dunskaRawId').value)">Otwórz dostawę</button>
+  <div id="dunskaList"></div><div id="dunskaForm" hidden><h3 id="dunskaTitle"></h3><div id="dunskaItems"></div><button class="btn" id="dunskaAccept" onclick="acceptDunska()">Potwierdź odbiór</button></div>
+</section>
+<section class="screen" id="scrDunskaQr"><button class="link" onclick="show('scrHome')">← Wróć</button><h2 id="dunskaQrTitle"></h2><div id="dunskaQrImage"></div><p id="dunskaQrText"></p><button class="btn" onclick="printDunskaQr()">Drukuj QR dostawy</button><button class="btn sec" onclick="openToCount()">Policz, co zostało</button></section>
 <section class="screen" id="scrToCount"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openToCount()">Odśwież</button></div><h2>Policz, co zostało</h2><p>Wpisz liczbę sztuk, które są teraz na półce.</p><div id="toCountList"></div></section>
 <section class="screen" id="scrProducts">
   <button class="link" onclick="show('scrHome')">← Wróć</button>
@@ -327,7 +339,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp
 function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
 function lsSet(k,v){ try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k,v); } catch(e){} }
 function toast(m){ const t = $('toast'); t.textContent = m; t.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('show'), 2800); }
-function show(id){ document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id)); window.scrollTo(0,0); }
+function show(id){ if(id !== 'scrDunska' && typeof leaveDunska === 'function') leaveDunska(); document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id)); window.scrollTo(0,0); }
 function fmtZl(v){ return (v === '' || v == null || isNaN(Number(v))) ? '—' : Number(v).toLocaleString('pl-PL', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' zł'; }
 
 function api(fn, ...args){
@@ -410,6 +422,7 @@ async function login(pin){
   }
 }
 async function afterLogin(offline){
+  $('btnDunska').hidden = !ROLES.includes('RECEIVE_DUNSKA');
   $('btnApprovals').hidden = !ROLES.includes('APPROVE_IN');
   if (!offline && ROLES.includes('APPROVE_IN')) refreshApprovalCount();
   $('who').textContent = ME;
@@ -845,7 +858,8 @@ async function doClose(force, pinOverride){
       { label: 'Zamknij mimo to', cls: 'danger', fn: () => doClose(true, cpin) }, { label: 'Poczekam', cls: 'sec' }]);
     if(r.status === 'DO_ZATWIERDZENIA') { toast('Dokument czeka na zatwierdzenie'); leaveDoc(); refreshApprovalCount(); return; }
     toast(`Zamknięto ✅ ${r.items} pozycji, ${r.qty} szt.`); leaveDoc();
-    if(r.toCount && r.toCount.length) await openToCount(r.toCount);
+    if(r.isDunskaDelivery) showDunskaQr(r);
+    else if(r.toCount && r.toCount.length) await openToCount(r.toCount);
   } catch(e){ toast(e.message); }
 }
 
@@ -883,6 +897,8 @@ document.addEventListener('visibilitychange', () => {
   updateQbar();
 })();
 </script>
+<script src="vendor/qrcode-2.0.4.js"></script>
+<script src="screens/dunska.js"></script>
 <script src="screens/zatwierdzenia.js"></script>
 <script src="screens/inwentaryzacja.js"></script>
 <script src="screens/produkty.js"></script>

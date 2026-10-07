@@ -4,6 +4,7 @@
   const workerUrl = typeof document !== 'undefined' && document.currentScript ? new URL('barcode-worker.js?v=20261005-2', document.currentScript.src).href : 'barcode-worker.js?v=20261005-2';
   function validCode(value, format) {
     const code = String(value || '').trim();
+    if (format === 'QRCode' && /^DOSTAWA-DUNSKA:D[0-9a-f]{7}$/.test(code)) return code;
     if (!/^\d{6,14}$/.test(code)) return '';
     if (format === 'EAN13' || format === 'EAN8' || format === 'UPCA') {
       const size = { EAN13: 13, EAN8: 8, UPCA: 12 }[format];

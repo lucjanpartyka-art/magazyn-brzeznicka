@@ -9,7 +9,7 @@ self.onmessage = async ({ data }) => {
     await ready;
     if (data.type === 'ready') { self.postMessage({ id: data.id, results: [] }); return; }
     const results = await ZXingWASM.readBarcodes(new ImageData(new Uint8ClampedArray(data.buffer), data.width, data.height), {
-      formats: ['EAN13', 'EAN8', 'UPCA', 'UPCE', 'Code128'],
+      formats: ['EAN13', 'EAN8', 'UPCA', 'UPCE', 'Code128', 'QRCode'],
       tryHarder: true, tryRotate: true, tryInvert: true, tryDownscale: true,
       maxNumberOfSymbols: 4, binarizer: data.binarizer || 'LocalAverage'
     });
