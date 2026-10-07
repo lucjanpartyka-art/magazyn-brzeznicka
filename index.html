@@ -152,12 +152,15 @@
     <button class="price" id="btnHomePrice" hidden onclick="openPriceOnly()"><b>💰 CENA</b><span>Sprawdź cenę hurt i stan po zeskanowaniu</span></button>
   </div>
   <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
+  <button class="btn sec" onclick="openInventories()">Inwentaryzacja</button>
   <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
 </section>
 
 <section class="screen" id="scrToCount"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openToCount()">Odśwież</button></div><h2>Policz, co zostało</h2><p>Wpisz liczbę sztuk, które są teraz na półce.</p><div id="toCountList"></div></section>
+<section class="screen" id="scrInventory"><button class="link" onclick="show('scrHome')">← Wróć</button><h2>Inwentaryzacja</h2><div id="inventoryList"></div><div id="inventoryStart" hidden><h3>Rozpocznij inwentaryzację</h3><label for="inventoryScope">Zakres</label><select id="inventoryScope"><option value="all">Cały magazyn</option><option value="skus">Lista SKU / skaner</option><option value="locations">Lokalizacje</option></select><label for="inventoryValues">SKU lub lokalizacje, po jednym w wierszu</label><textarea id="inventoryValues"></textarea><button class="btn sec" onclick="scanInventoryScope()">Skanuj SKU do zakresu</button><button class="btn" onclick="startInventory()">Rozpocznij</button></div></section>
+<section class="screen" id="scrInventoryCompare"><button class="link" onclick="openInventories()">← Inwentaryzacje</button><h2>Różnice inwentaryzacji</h2><div id="inventoryDifferences"></div><label id="inventoryZeroLabel"><input type="checkbox" id="inventoryZero">Potwierdzam zerowanie niepoliczonych SKU: <span id="inventoryZeroList"></span></label><button class="btn" id="inventoryApprove">Zatwierdź inwentaryzację</button></section>
 <section class="screen" id="scrApprovals"><div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openApprovals()">Odśwież</button></div><h2>Do zatwierdzenia</h2><div id="approvalList"></div></section>
 <!-- LISTA DOKUMENTÓW -->
 <section class="screen" id="scrDocs">
@@ -230,8 +233,8 @@
         <div class="stepper"><button type="button" onclick="step(-1)">–</button><input type="number" id="cQty" value="1" min="1" inputmode="numeric"><button type="button" onclick="step(1)">+</button></div>
       </div>
       <div class="row2">
-        <div class="field"><label for="cExp" id="cExpLabel">Data ważności</label><input type="date" id="cExp"></div>
-        <div class="field"><label for="cLot">Kod / LOT</label><input type="text" id="cLot" autocomplete="off"></div>
+        <div class="field" id="cExpField"><label for="cExp" id="cExpLabel">Data ważności</label><input type="date" id="cExp"></div>
+        <div class="field" id="cLotField"><label for="cLot">Kod / LOT</label><input type="text" id="cLot" autocomplete="off"></div>
       </div>
       <div class="field">
         <div class="photo" id="phExp" onclick="pickPhoto('exp')"><span style="font-size:24px;">📅</span><span id="phExpTxt">Zdjęcie daty ważności — odczytam (opcja)</span></div>
@@ -263,7 +266,7 @@
     <p class="hint">„Zamknij” łączy liczenia wszystkich osób, sumuje po SKU i aktualizuje stan magazynu. Tego nie da się cofnąć.</p>
   </div>
 
-  <button class="link" id="btnBackPrice" hidden onclick="stopScanner(); show('scrHome')">← Wróć</button>
+  <button class="link" id="btnBackPrice" hidden onclick="stopScanner(); if(INVENTORY_SCANNING)openInventories(); else show('scrHome')">← Wróć</button>
 </section>
 </main>
 
@@ -431,20 +434,24 @@ async function joinDoc(id){ try { enterDoc(await api('apiJoinDoc', PIN, id)); } 
 function enterDoc(doc){
   if (doc.status !== 'OTWARTA') { lsSet('mg_docjson', null); show('scrHome'); return toast('Ten dokument jest już zamknięty'); }
   DOC = doc; DOC_TYPE = doc.type; PRICE_ONLY = false; lsSet('mg_docjson', JSON.stringify(doc));
-  const isIn = doc.type === 'DOSTAWA';
+  const isIn = doc.type === 'DOSTAWA', inv=doc.type==='INWENTARYZACJA';
+  INVENTORY_SCANNING=false;
+  $('cExpField').hidden=inv; $('cLotField').hidden=inv; $('phExp').hidden=inv; $('expHint').hidden=inv;
+  $('btnClose').hidden=inv?!ROLES.includes('INVENTORY'):!ROLES.includes('POST_STOCK');
   $('docHead').hidden = false; $('tabsBar').hidden = false; $('btnBackPrice').hidden = true;
-  $('docTitle').textContent = doc.title; $('docSub').textContent = isIn ? 'Przyjęcie towaru' : 'Wydanie towaru';
+  $('docTitle').textContent = doc.title; $('docSub').textContent = inv ? 'Liczenie na ślepo' : isIn ? 'Przyjęcie towaru' : 'Wydanie towaru';
   $('docReq').innerHTML = doc.requireExpiry ? '<span class="tag warn">Data ważności lub kod — obowiązkowe</span>' : '';
   $('cExpLabel').textContent = doc.requireExpiry ? 'Data ważności *' : 'Data ważności';
-  $('cPriceField').hidden = isIn;
-  $('btnClose').textContent = isIn ? '🔒 Zamknij dostawę (PIN)' : '🔒 Zamknij export (PIN)';
-  $('modeBar').hidden = !(CAN_PRICE && !isIn);
+  $('cPriceField').hidden = isIn || inv;
+  $('btnClose').textContent = inv ? 'Zamknij inwentaryzację' : isIn ? '🔒 Zamknij dostawę (PIN)' : '🔒 Zamknij export (PIN)';
+  $('modeBar').hidden = inv || !(CAN_PRICE && !isIn);
   setMode('exp', true);
   const savedDraft = lsGet('mg_draft');
   show('scrCount'); tab('add'); restoreDraft(savedDraft); renderStatus(); refreshItems(); processQueue();
 }
-function leaveDoc(){ stopScanner(); lsSet('mg_draft', null); DOC = null; lsSet('mg_docjson', null); show('scrHome'); }
+function leaveDoc(){ if(INVENTORY_SCANNING){stopScanner();return openInventories();} stopScanner(); lsSet('mg_draft', null); DOC = null; lsSet('mg_docjson', null); show('scrHome'); }
 function openPriceOnly(){
+  INVENTORY_SCANNING=false;
   DOC = null; PRICE_ONLY = true;
   $('docHead').hidden = true; $('tabsBar').hidden = true; $('modeBar').hidden = true; $('btnBackPrice').hidden = false;
   MODE = 'pri'; show('scrCount'); tab('add');
@@ -587,9 +594,11 @@ function onCode(ean){
 }
 function noCode(){ chosen(null, ''); }
 function chosen(sku, ean){
+  if(INVENTORY_SCANNING)return inventoryScanned(sku);
   stopScanner();
   const p = sku ? CAT.bySku.get(sku) : null;
   cur = { sku: sku || '', ean: ean || (p && p.eans[0]) || '', name: p ? p.name : '', isNew: !p };
+  if(DOC && DOC.type==='INWENTARYZACJA' && (!sku || !DOC.inventorySkus.includes(sku)))return toast('SKU poza zakresem inwentaryzacji');
   if (MODE === 'pri') return showPrice();
   showCount();
 }
@@ -658,6 +667,7 @@ async function addItem(){
     price: DOC.type === 'EXPORT' ? $('cPrice').value.trim().replace(',', '.') : '', notes: $('cNotes').value.trim(),
     photoFront: cur.isNew ? photo.front : null, photoExpiry: photo.exp, needSku: cur.isNew
   };
+  if(DOC.type==='INWENTARYZACJA'){item.expiry='';item.lot='';item.photoExpiry=null;}
   if (cur.isNew && !item.photoFront) return toast('Nowy produkt — zrób zdjęcie przodu');
   if (!item.name) return toast('Wpisz nazwę produktu');
   if (!item.qty || item.qty < 1) return toast('Wpisz ilość');
@@ -772,6 +782,7 @@ async function finishMine(){
 async function resumeMine(){ try { DOC = await api('apiResumeMine', PIN, DOC.id); renderStatus(); toast('Możesz liczyć dalej'); } catch(e){ toast(e.message); } }
 async function askClose(){
   if ((await queueForDoc()).length) { processQueue(); return toast('Najpierw muszą się wysłać Twoje pozycje'); }
+  if(DOC.type==='INWENTARYZACJA')return closeInventory();
   sheet(DOC.type === 'DOSTAWA' ? 'Zamknąć dostawę?' : 'Zamknąć export?', 'Liczenia wszystkich osób zostaną zsumowane, a stan magazynu zaktualizowany. Wpisz swój PIN.', [
     { label: 'Zamknij', cls: 'danger', keep: true, fn: () => doClose(false) }, { label: 'Anuluj', cls: 'sec' }],
     '<input class="pin" id="closePin" type="password" inputmode="numeric" maxlength="8" style="margin-bottom:12px; font-size:22px;">');
@@ -827,5 +838,6 @@ document.addEventListener('visibilitychange', () => {
 })();
 </script>
 <script src="screens/zatwierdzenia.js"></script>
+<script src="screens/inwentaryzacja.js"></script>
 </body>
 </html>
