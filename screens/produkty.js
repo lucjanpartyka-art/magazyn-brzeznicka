@@ -14,7 +14,7 @@ async function openProducts() {
     for(const p of rows) {
       const button=document.createElement('button');
       button.className='btn sec';
-      button.textContent=p.sku+' · '+p.name+' · stan '+p.qty+(p.toCount?' · Do policzenia':'');
+      button.textContent=p.sku+' · '+p.name+' · stan '+(p.qty===null?'—':p.qty)+(p.notes?' · '+p.notes:'')+(p.toCount?' · Do policzenia':'');
       button.onclick=()=>openProduct(p.sku);
       box.appendChild(button);
     }
@@ -38,7 +38,7 @@ async function openProduct(sku) {
     show('scrProduct');
     const p=data.product;
     $('productTitle').textContent=p.sku+' · '+p.name;
-    $('productSummary').textContent='Stan: '+p.qty+' · EAN: '+[p.ean].concat(p.eans || []).filter(Boolean).join(', ')+' · Lokalizacja: '+(p.location || '—')+' · '+(p.active?'Aktywny':'Wycofany')+(p.toCount?' · Do policzenia':'');
+    $('productSummary').textContent='Stan: '+(p.qty===null?'—':p.qty)+(p.notes?' · '+p.notes:'')+' · EAN: '+[p.ean].concat(p.eans || []).filter(Boolean).join(', ')+' · Lokalizacja: '+(p.location || '—')+' · '+(p.active?'Aktywny':'Wycofany')+(p.toCount?' · Do policzenia':'');
     $('productEdit').hidden=!productsCanEdit();
     $('productReplace').hidden=!productsCanEdit() || !p.active;
     $('productActive').hidden=!productsCanEdit() || !!p.replacedBy;
@@ -53,7 +53,7 @@ async function openProduct(sku) {
       $('productLinks').appendChild(link);
     }
     $('productMoves').textContent='';
-    data.moves.forEach(m=>productTextRow($('productMoves'),[m.date,m.type,m.qty,m.docTitle,m.actorId].filter(v=>v!==undefined && v!=='').join(' · ')));
+    data.moves.forEach(m=>productTextRow($('productMoves'),[m.date,m.type,m.qty===null?'—':m.qty,m.docTitle,m.actorId].filter(v=>v!==undefined && v!=='').join(' · ')));
     if(!data.moves.length)$('productMoves').textContent='Brak ruchów.';
     $('productHistory').textContent='';
     data.history.forEach(h=>productTextRow($('productHistory'),[h.date,h.actorId,h.field,JSON.stringify(h.before)+' → '+JSON.stringify(h.after)].filter(Boolean).join(' · ')));
@@ -76,7 +76,7 @@ async function saveProduct() {
   if(!productsCanEdit())return;
   try {
     const p={sku:$('productSku').value.trim(),originalSku:PRODUCT_ORIGINAL,name:$('productName').value.trim(),ean:$('productEan').value.trim(),eans:$('productEans').value.split(/[\n,;]/).map(x=>x.trim()).filter(Boolean),location:$('productLocation').value.trim()};
-    await api('apiSaveProduct',PIN,p);
+    await api('apiSaveProduct',PIN,p,PRODUCT_ORIGINAL?'EDIT':'ADD');
     await openProduct(p.sku);
   }catch(e) {toast(e.message);}
 }

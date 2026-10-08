@@ -30,5 +30,8 @@ test('wyszukiwarka i filtr trafiają do API, rola widzi formularz ze stałym SKU
   p.run("$('productName').value='Nowa';$('productEans').value='456,789'");
   await p.run('saveProduct()');
   const saved=p.calls.find(c=>c[0]==='apiSaveProduct')[2];
-  assert.equal(saved.originalSku,'S1');assert.equal(saved.name,'Nowa');assert.deepEqual(Array.from(saved.eans),['456','789']);
+  assert.equal(p.calls.find(c=>c[0]==='apiSaveProduct')[3],'EDIT');assert.equal(saved.originalSku,'S1');assert.equal(saved.name,'Nowa');assert.deepEqual(Array.from(saved.eans),['456','789']);
 });
+test('stan null jest wyświetlany jako — z informacją o inwentaryzacji',async()=>{const p=page();p.run("api=async(fn)=>fn==='apiProduct'?{product:{sku:'X',name:'X',qty:null,notes:'trwa inwentaryzacja'},moves:[],history:[]}:[{sku:'X',name:'X',qty:null,notes:'trwa inwentaryzacja'}]");await p.run('openProducts()');assert.match(p.elements.get('productList').children[0].textContent,/stan —.*trwa inwentaryzacja/);await p.run("openProduct('X')");assert.match(p.elements.get('productSummary').textContent,/Stan: —.*trwa inwentaryzacja/);});
+
+test('dodawanie przekazuje tryb ADD',async()=>{const p=page(['PRODUCTS_EDIT']);p.run("editProduct(true);$('productSku').value='NEW';$('productName').value='Nowy'");await p.run('saveProduct()');assert.equal(p.calls.find(c=>c[0]==='apiSaveProduct')[3],'ADD');});
