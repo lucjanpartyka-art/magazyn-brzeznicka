@@ -90,6 +90,7 @@ async function printOfficeDocument(docId){
 }
 
 function resetOfficeSession(){
+ if(typeof resetOrderSession==='function')resetOrderSession();
  OFFICE_REQUEST++;OFFICE_EXPORT_REQUEST++;OFFICE_DETAIL=null;OFFICE_PAGE=0;OFFICE_CURSOR=null;OFFICE_SAVING=false;
  for(const id of ['officeList','officeRows','officeTotals','officeDocTitle','officeDocMeta','officeDocMessage','officeMessage','officePrint']){const el=document.getElementById(id);if(el){el.replaceChildren();el.textContent='';}}
  for(const id of ['officeBuy','officeSell','officePartner','officeQuery','officeFrom','officeTo']){const el=document.getElementById(id);if(el)el.value='';}
