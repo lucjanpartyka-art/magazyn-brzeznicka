@@ -946,16 +946,27 @@ async function askClose(){
     { label: 'Zamknij', cls: 'danger', keep: true, fn: () => doClose(false) }, { label: 'Anuluj', cls: 'sec' }],
     '<input class="pin" id="closePin" type="password" inputmode="numeric" maxlength="8" style="margin-bottom:12px; font-size:22px;">');
 }
-async function doClose(force, pinOverride){
+function askForceClose(cpin){
+  const docId=DOC && DOC.id, token=PIN;
+  sheet('Przyczyna wymuszenia zamknięcia', 'Upewnij się, że wszystkie pozycje zostały wysłane. Podaj przyczynę (10–500 znaków).', [
+    {label:'Zamknij mimo to',cls:'danger',keep:true,fn:()=>{
+      if(!DOC || DOC.id!==docId || PIN!==token)return hideSheet();
+      const reason=String(($('forceCloseReason') || {}).value || '').trim();
+      if(reason.length<10 || reason.length>500)return toast('Podaj przyczynę (10–500 znaków)');
+      return doClose(true,cpin,reason);
+    }}, {label:'Anuluj',cls:'sec'}],
+    '<textarea id="forceCloseReason" maxlength="500" rows="3" aria-label="Przyczyna wymuszenia zamknięcia"></textarea>');
+}
+async function doClose(force, pinOverride, forceReason){
   const cpin = pinOverride || digits((document.getElementById('closePin') || {}).value);
   if (cpin.length !== 8) return toast('Wpisz 8 cyfr PIN');
   hideSheet();
   try {
-    const reason = force ? prompt('Podaj przyczynę wymuszenia zamknięcia (minimum 10 znaków)') : '';
-    if (force && (!reason || reason.trim().length < 10)) return toast('Zamknięcie anulowane — brak przyczyny');
+    const reason = force ? String(forceReason || '').trim() : '';
+    if (force && (reason.length < 10 || reason.length > 500)) return toast('Podaj przyczynę (10–500 znaków)');
     const r = await api('apiCloseDoc', PIN, DOC.id, cpin, force, reason);
     if (r.needsForce) return sheet('Nie wszyscy skończyli', `Jeszcze liczą: ${r.pending.join(', ')}. Ich dotychczasowe pozycje też zostaną zaksięgowane.`, [
-      ...(ROLES.includes('FORCE_CLOSE') ? [{ label: 'Zamknij mimo to', cls: 'danger', fn: () => doClose(true, cpin) }] : []), { label: 'Poczekam', cls: 'sec' }]);
+      ...(ROLES.includes('FORCE_CLOSE') ? [{ label: 'Zamknij mimo to', cls: 'danger', fn: () => askForceClose(cpin) }] : []), { label: 'Poczekam', cls: 'sec' }]);
     if(r.status === 'DO_ZATWIERDZENIA') { toast('Dokument czeka na zatwierdzenie'); leaveDoc(); refreshApprovalCount(); return; }
     toast(`Zamknięto ✅ ${r.items} pozycji, ${r.qty} szt.`); leaveDoc();
     if(r.isDunskaDelivery) showDunskaQr(r);
