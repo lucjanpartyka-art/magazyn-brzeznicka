@@ -130,7 +130,10 @@
   .spin{width:18px; height:18px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:sp 0.8s linear infinite;}
   @keyframes sp{to{transform:rotate(360deg);}}
   @media (prefers-reduced-motion: reduce){ .spin{animation:none;} .toast{transition:none;} }
-@media print { body > :not(main) { display:none !important; } .screen { display:none !important; } #scrDunskaQr { display:block !important; } #scrDunskaQr button, .top, .bottom { display:none !important; } #scrDunskaQr { color:#000; background:#fff; } #dunskaQrImage svg { width:80mm; height:80mm; } }
+@media print { body > :not(main) { display:none !important; } .screen { display:none !important; } body:not(.office-print) #scrDunskaQr { display:block !important; } #scrDunskaQr button, .top, .bottom { display:none !important; } #scrDunskaQr { color:#000; background:#fff; } #dunskaQrImage svg { width:80mm; height:80mm; } }
+.office-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;} .office-filters select{width:100%;min-height:46px;background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:var(--radius);padding:10px;} .office-row{display:grid;gap:8px;padding:18px;border:1px solid var(--border);border-radius:var(--radius);overflow-wrap:anywhere;} #officeRows{margin-top:20px;} main:has(#scrOffice.active),main:has(#scrOfficeDoc.active){max-width:1100px;} @media(min-width:760px){.office-row{grid-template-columns:2fr 2fr 2fr 150px;align-items:center;} .office-filters{grid-template-columns:repeat(3,minmax(0,1fr));}}
+@media print {body.office-print #scrDunskaQr{display:none!important;} body.office-print #officePrint{display:block!important;color:#000;background:#fff;font-size:10pt;} body.office-print main{max-width:none;} #officePrint table{width:100%;border-collapse:collapse;table-layout:fixed;} #officePrint th,#officePrint td{border:1px solid #bbb;padding:5px;overflow-wrap:anywhere;} #officePrint thead{display:table-header-group;} #officePrint tr{break-inside:avoid;} }
+.office-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:13px;} .office-table th{text-align:left;color:var(--muted);font-weight:600;} .office-table th,.office-table td{padding:12px 6px;border-bottom:1px solid var(--border);vertical-align:top;overflow-wrap:anywhere;} .office-table th:first-child{width:23%;} .office-table th:last-child{width:17%;} .office-table .btn{padding:10px 8px;font-size:13px;} .office-table .hint{font-size:11px;margin:8px 0 0;} @media(max-width:759px){.office-table,.office-table tbody{display:block;} .office-table thead{display:none;} .office-table tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:16px;margin-bottom:12px;border:1px solid var(--border);border-radius:var(--radius);} .office-table td{display:block;border:0;padding:4px;font-size:15px;} .office-table td:first-child,.office-table td:last-child{grid-column:1/-1;} .office-table td:first-child{font-weight:600;} .office-table td::before{content:attr(data-label);display:block;font-size:11px;color:var(--muted);font-weight:400;margin-bottom:4px;} }
 </style>
 </head>
 <body>
@@ -167,10 +170,15 @@
   <button class="btn sec" onclick="openProducts()"><span class="tool-title">Lista produktów</span><span class="tool-description">Wyszukaj produkt i jego dane</span></button>
   <button class="btn sec" id="btnDunska" hidden onclick="openDunska()"><span class="tool-title">Duńska · odbiór i braki</span><span class="tool-description">Odbierz dostawę lub sprawdź braki</span></button>
   <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()"><span class="tool-title">Do zatwierdzenia <span class="tool-count" id="approvalCount">0</span></span><span class="tool-description">Sprawdź przyjęcia oczekujące na decyzję</span></button>
+  <button class="btn sec" id="btnOffice" hidden onclick="openOffice()"><span class="tool-title">Biuro</span><span class="tool-description">Ceny netto, marża, dokumenty i druk</span></button>
   </nav>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
 </section>
+
+<section class="screen" id="scrOffice"><button class="link" onclick="show('scrHome')">← Wróć</button><h2>Biuro</h2><div class="office-filters"><div class="field"><label for="officeType">Typ</label><select id="officeType"><option value="">Wszystkie typy</option>DOSTAWA</option>EXPORT</option></select></div><div class="field"><label for="officeStatus">Status</label><select id="officeStatus"><option value="">Wszystkie statusy</option>ZAMKNIĘTA</option>DO_ZATWIERDZENIA</option></select></div><div class="field"><label for="officePartner">Kontrahent</label><input type="text" id="officePartner"></div><div class="field"><label for="officeQuery">Dokument</label><input type="text" id="officeQuery"></div><div class="field"><label for="officeFrom">Od</label><input type="date" id="officeFrom"></div><div class="field"><label for="officeTo">Do</label><input type="date" id="officeTo"></div></div><button class="btn sec" onclick="officeFilterChanged()">Pokaż dokumenty</button><p id="officeMessage" role="status"></p><div class="stack" id="officeList"></div><button class="btn sec" hidden id="officeMore">Następne dokumenty</button></section>
+<section class="screen" id="scrOfficeDoc"><button class="link" onclick="openOffice()">← Dokumenty</button><h2 id="officeDocTitle"></h2><p id="officeDocMeta" class="hint"></p><p id="officeDocMessage" role="status"></p><p id="officeTotals"></p><div class="row2"><button class="btn sec" onclick="downloadOfficeDocument('xlsx')">Pobierz Excel</button><button class="btn sec" onclick="downloadOfficeDocument('pdf')">Pobierz PDF</button></div><button class="btn sec" onclick="printOfficeDocument()">Drukuj</button><div id="officeRows" class="stack"></div><div class="bar"><button id="officePrev" class="link" onclick="OFFICE_PAGE--;renderOfficeDoc()">Poprzednia</button><span id="officePage"></span><button id="officeNext" class="link" onclick="OFFICE_PAGE++;renderOfficeDoc()">Następna</button></div></section>
+<section id="officePrint" hidden></section>
 
 <section class="screen" id="scrDunska">
   <div class="bar"><button class="link" onclick="show('scrHome')">← Wróć</button><button class="link" onclick="openDunska()">Odśwież</button></div>
@@ -452,6 +460,7 @@ async function login(pin){
 }
 async function afterLogin(offline){
   $('btnDunska').hidden = false;
+  $('btnOffice').hidden = !ROLES.includes('OFFICE');
   $('btnApprovals').hidden = !ROLES.includes('APPROVE_IN');
   if (!offline && ROLES.includes('APPROVE_IN')) refreshApprovalCount();
   $('who').textContent = ME;
@@ -1024,5 +1033,6 @@ document.addEventListener('visibilitychange', () => {
 <script src="screens/zatwierdzenia.js"></script>
 <script src="screens/inwentaryzacja.js"></script>
 <script src="screens/produkty.js"></script>
+<script src="screens/biuro.js"></script>
 </body>
 </html>
