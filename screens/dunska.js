@@ -175,17 +175,17 @@ async function loadDunskaLowStock() {
     const age = Number.isFinite(time.getTime()) ? Math.max(0, Math.floor((Date.now() - time.getTime()) / 60000)) : null;
     $('dunskaLowStockMeta').textContent = 'Źródło: ' + (result.source || 'brak danych') +
       (age === null ? '' : ' · ' + time.toLocaleString('pl-PL') + ' · wiek: ' + age + ' min');
-    $('dunskaLowStockWarning').textContent = result.stale ? 'Dane nieaktualne — sprawdź czytnik lub wczytaj zapasowy CSV.' : '';
+    $('dunskaLowStockWarning').textContent = result.stale ? 'Dane nieaktualne — wczytaj aktualny plik CSV.' : '';
     $('dunskaLowStockWarning').hidden = !result.stale;
     box.textContent = '';
     for (const item of result.items) {
       const row = document.createElement('div');
       row.className = 'item';
       row.textContent = item.sku + ' · ' + item.name + ' · brakuje: ' + item.deficit +
-        ' · Duńska: ' + item.stanDunska + ' / min. ' + item.stanMin + ' · Brzeźnicka: ' + item.stanBrzeznicka;
+        ' · Duńska: ' + item.stanDunska + ' / min. ' + item.stanMin + ' · Brzeźnicka: ' + (item.stanBrzeznicka===null?'—':item.stanBrzeznicka);
       box.appendChild(row);
     }
-    if (!result.items.length) box.textContent = result.dataTime ? 'Brak produktów poniżej minimum.' : 'Brak danych z czytnika lub importu.';
+    if (!result.items.length) box.textContent = result.dataTime ? 'Brak produktów poniżej minimum.' : 'Brak danych z importu CSV.';
   } catch (error) {
     if (token === PIN && version === DUNSKA_VERSION && request === DUNSKA_LOW_VERSION) box.textContent = error.message;
   }

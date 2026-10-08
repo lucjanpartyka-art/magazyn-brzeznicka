@@ -1,3 +1,4 @@
+let INVENTORY_REQUEST=0;
 let INVENTORY_SCANNING=false;
 function renderInventoryCountProducts(doc) {
   const picker = $('inventoryCountPicker'), select = $('inventoryCountSku');
@@ -22,13 +23,15 @@ function chooseInventoryCountProduct(sku) {
   chosen(product.sku, product.ean || '');
 }
 async function openInventories() {
+  const token=PIN,request=++INVENTORY_REQUEST;
   INVENTORY_SCANNING=false;
   show('scrInventory');
   $('inventoryStart').hidden=!ROLES.includes('INVENTORY');
   const box=$('inventoryList');
   box.textContent='Wczytuję…';
   try {
-    const docs=await api('apiListInventories',PIN);
+    const docs=await api('apiListInventories',token);
+    if(token!==PIN || request!==INVENTORY_REQUEST)return;
     box.textContent='';
     for(const d of docs) {
       const card=document.createElement('div');
@@ -45,7 +48,7 @@ async function openInventories() {
       box.appendChild(card);
     }if(!docs.length)box.textContent='Brak inwentaryzacji w toku.';
   }catch(e) {
-    box.textContent=e.message;
+    if(token===PIN && request===INVENTORY_REQUEST)box.textContent=e.message;
   }
 }
 function inventoryScope() {
@@ -63,8 +66,9 @@ function inventoryScope() {
 }
 async function startInventory() {
   try {
-    const scope=inventoryScope();
-    enterDoc(await api('apiStartInventory',PIN,scope));
+    const scope=inventoryScope(),token=PIN;
+    const doc=await api('apiStartInventory',token,scope);
+    if(token===PIN)enterDoc(doc);
   }catch(e) {
     toast(e.message);
   }
@@ -95,7 +99,8 @@ function inventoryScanned(sku) {
 }
 async function closeInventory() {
   try {
-    const id=DOC.id,r=await api('apiCloseInventory',PIN,id);
+    const id=DOC.id,token=PIN,r=await api('apiCloseInventory',token,id);
+    if(token!==PIN || !DOC || DOC.id!==id)return;
     leaveDoc();
     showInventoryComparison(id,r);
   }catch(e) {

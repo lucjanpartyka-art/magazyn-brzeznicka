@@ -1,15 +1,18 @@
+let PRODUCT_REQUEST=0;
 let PRODUCT_CURRENT=null;
 let PRODUCT_ORIGINAL='';
 function productsCanEdit() {
   return ROLES.includes('PRODUCTS_EDIT');
 }
 async function openProducts() {
+  const token=PIN,request=++PRODUCT_REQUEST;
   show('scrProducts');
   $('productAdd').hidden=!productsCanEdit();
   const box=$('productList');
   box.textContent='Wczytuję…';
   try {
-    const rows=await api('apiListProducts',PIN,$('productQuery').value,$('productFilter').value || 'all');
+    const rows=await api('apiListProducts',token,$('productQuery').value,$('productFilter').value || 'all');
+    if(token!==PIN || request!==PRODUCT_REQUEST)return;
     box.textContent='';
     for(const p of rows) {
       const button=document.createElement('button');
@@ -24,7 +27,7 @@ async function openProducts() {
       note.textContent='Pokazano 300 produktów. Zawęź wyszukiwanie.';
       box.appendChild(note);
     }
-  }catch(e) {box.textContent=e.message;}
+  }catch(e) {if(token===PIN && request===PRODUCT_REQUEST)box.textContent=e.message;}
 }
 function productTextRow(box,text) {
   const row=document.createElement('p');
@@ -32,8 +35,10 @@ function productTextRow(box,text) {
   box.appendChild(row);
 }
 async function openProduct(sku) {
+  const token=PIN,request=++PRODUCT_REQUEST;
   try {
-    const data=await api('apiProduct',PIN,sku);
+    const data=await api('apiProduct',token,sku);
+    if(token!==PIN || request!==PRODUCT_REQUEST)return;
     PRODUCT_CURRENT=data.product;
     show('scrProduct');
     const p=data.product;
@@ -58,9 +63,10 @@ async function openProduct(sku) {
     $('productHistory').textContent='';
     data.history.forEach(h=>productTextRow($('productHistory'),[h.date,h.actorId,h.field,JSON.stringify(h.before)+' → '+JSON.stringify(h.after)].filter(Boolean).join(' · ')));
     if(!data.history.length)$('productHistory').textContent='Brak zmian.';
-  }catch(e) {toast(e.message);}
+  }catch(e) {if(token===PIN && request===PRODUCT_REQUEST)toast(e.message);}
 }
 function editProduct(isNew=false) {
+  PRODUCT_REQUEST++;
   if(!productsCanEdit())return;
   const p=isNew?{}:PRODUCT_CURRENT;
   PRODUCT_ORIGINAL=p.sku || '';
@@ -72,26 +78,37 @@ function editProduct(isNew=false) {
   $('productLocation').value=p.location || '';
   show('scrProductEdit');
 }
+let PRODUCT_MUTATING=false;
+function productMutationBusy(busy){
+  PRODUCT_MUTATING=busy;
+  for(const id of ['productSave','productReplace','productActive']){const b=$(id);if(b)b.disabled=busy;}
+}
 async function saveProduct() {
-  if(!productsCanEdit())return;
+  if(!productsCanEdit() || PRODUCT_MUTATING)return;
+  const token=PIN;productMutationBusy(true);
   try {
     const p={sku:$('productSku').value.trim(),originalSku:PRODUCT_ORIGINAL,name:$('productName').value.trim(),ean:$('productEan').value.trim(),eans:$('productEans').value.split(/[\n,;]/).map(x=>x.trim()).filter(Boolean),location:$('productLocation').value.trim()};
-    await api('apiSaveProduct',PIN,p,PRODUCT_ORIGINAL?'EDIT':'ADD');
-    await openProduct(p.sku);
-  }catch(e) {toast(e.message);}
+    await api('apiSaveProduct',token,p,PRODUCT_ORIGINAL?'EDIT':'ADD');
+    if(PIN!==token)return;
+    await loadCatalog();if(PIN===token)await openProduct(p.sku);
+  }catch(e){if(PIN===token)toast(e.message);}finally{productMutationBusy(false);}
 }
 async function replaceProductSku() {
-  if(!productsCanEdit() || !PRODUCT_CURRENT)return;
+  if(!productsCanEdit() || !PRODUCT_CURRENT || PRODUCT_MUTATING)return;
+  const token=PIN;productMutationBusy(true);
   try {
-    const result=await api('apiReplaceSku',PIN,PRODUCT_CURRENT.sku);
-    await openProduct(result.newSku);
-  }catch(e) {toast(e.message);}
+    const result=await api('apiReplaceSku',token,PRODUCT_CURRENT.sku);
+    if(PIN!==token)return;
+    await loadCatalog();if(PIN===token)await openProduct(result.newSku);
+  }catch(e){if(PIN===token)toast(e.message);}finally{productMutationBusy(false);}
 }
 async function setProductActive() {
-  if(!productsCanEdit() || !PRODUCT_CURRENT)return;
+  if(!productsCanEdit() || !PRODUCT_CURRENT || PRODUCT_MUTATING)return;
+  const token=PIN;productMutationBusy(true);
   try {
     const sku=PRODUCT_CURRENT.sku;
-    await api('apiSetActive',PIN,sku,!PRODUCT_CURRENT.active);
-    await openProduct(sku);
-  }catch(e) {toast(e.message);}
+    await api('apiSetActive',token,sku,!PRODUCT_CURRENT.active);
+    if(PIN!==token)return;
+    await loadCatalog();if(PIN===token)await openProduct(sku);
+  }catch(e){if(PIN===token)toast(e.message);}finally{productMutationBusy(false);}
 }

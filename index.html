@@ -130,7 +130,7 @@
 <body>
 <header class="top">
   <div><h1>📦 Liczenie towaru</h1><p>Magazyn Brzeźnicka</p></div>
-  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja audytowa 2026.10.07 — niewdrożona</small></div>
+  <div><div class="who" id="who"></div><small style="font-size:10px">Wersja 2026.10.08 — bez Nexo</small></div>
 </header>
 
 <main>
@@ -200,7 +200,7 @@
   <label for="productEan">EAN główny</label><input id="productEan" inputmode="numeric">
   <label for="productEans">EAN dodatkowe (oddziel przecinkami)</label><textarea id="productEans"></textarea>
   <label for="productLocation">Lokalizacja</label><input id="productLocation">
-  <button class="btn" onclick="saveProduct()">Zapisz</button>
+  <button class="btn" id="productSave" onclick="saveProduct()">Zapisz</button>
 </section>
 <section class="screen" id="scrInventory"><button class="link" onclick="show('scrHome')">← Wróć</button><h2>Inwentaryzacja</h2><div id="inventoryList"></div><div id="inventoryStart" hidden><h3>Rozpocznij inwentaryzację</h3><label for="inventoryScope">Zakres</label><select id="inventoryScope"><option value="all">Cały magazyn</option><option value="skus">Lista SKU / skaner</option><option value="locations">Lokalizacje</option></select><label for="inventoryValues">SKU lub lokalizacje, po jednym w wierszu</label><textarea id="inventoryValues"></textarea><button class="btn sec" onclick="scanInventoryScope()">Skanuj SKU do zakresu</button><button class="btn" onclick="startInventory()">Rozpocznij</button></div></section>
 <section class="screen" id="scrInventoryCompare"><button class="link" onclick="openInventories()">← Inwentaryzacje</button><h2>Różnice inwentaryzacji</h2><div id="inventoryDifferences"></div><label id="inventoryZeroLabel"><input type="checkbox" id="inventoryZero">Potwierdzam zerowanie niepoliczonych SKU: <span id="inventoryZeroList"></span></label><button class="btn" id="inventoryApprove">Zatwierdź inwentaryzację</button></section>
@@ -353,11 +353,14 @@ function show(id){ if(id !== 'scrDunska' && typeof leaveDunska === 'function') l
 function fmtZl(v){ return (v === '' || v == null || isNaN(Number(v))) ? '—' : Number(v).toLocaleString('pl-PL', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' zł'; }
 
 function api(fn, ...args){
-  if (IN_GAS) return new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(e => rej(new Error(e && e.message || String(e))))[fn](...args)).catch(handleAuthErr);
+  const requestToken=args[0];
+  const failure=e=>{if(fn!=='apiLogout' && (fn==='apiLogin' || requestToken===PIN)) return handleAuthErr(e);throw e;};
+  const success=data=>{if(typeof requestToken==='string' && requestToken.startsWith('SESSION-') && fn!=='apiSession' && fn!=='apiLogout' && requestToken!==PIN)throw new Error('Sesja zmieniona — pominięto spóźnioną odpowiedź');return data;};
+  if (IN_GAS) return new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(e => rej(new Error(e && e.message || String(e))))[fn](...args)).then(success).catch(failure);
   return fetch(API_URL, { method: 'POST', body: JSON.stringify({ fn, args }) })
     .then(r => r.json())
-    .then(j => { if (!j.ok) throw new Error(j.error); return j.data; })
-    .catch(handleAuthErr);
+    .then(j => { if (!j.ok) throw new Error(j.error); return success(j.data); })
+    .catch(failure);
 }
 function handleAuthErr(e){ if (/\bAUTH\b/.test(e.message)) logout('Brak dostępu — PIN usunięty lub zmieniony'); throw e; }
 const isNet = e => /fetch|network|Failed|Load failed|NetworkError|timed out|offline/i.test(e && e.message || '');
@@ -368,7 +371,7 @@ function sheet(title, body, actions, extra){
   actions.forEach(a => { const b = document.createElement('button'); b.className = 'btn' + (a.cls ? ' ' + a.cls : ''); b.textContent = a.label; b.onclick = () => { if (!a.keep) hideSheet(); a.fn && a.fn(); }; box.appendChild(b); });
   $('sheetBg').classList.add('show');
 }
-function hideSheet(){ $('sheetBg').classList.remove('show'); }
+function hideSheet(){ const input=document.getElementById('closePin');if(input)input.value='';$('sheetBg').classList.remove('show'); }
 
 /* ================= IndexedDB: katalog + kolejka ================= */
 let dbp = null;
@@ -411,16 +414,21 @@ async function loadCatalog(){
 
 /* ================= logowanie ================= */
 $('pinInput').addEventListener('input', () => { const p = $('pinInput'); p.value = digits(p.value).slice(0,8); if (p.value.length === 8) login(p.value); });
+let LOGIN_VERSION=0;
 async function login(pin){
+  const version=++LOGIN_VERSION;
   const msg = $('loginMsg'); msg.textContent = 'Sprawdzam…'; msg.className = 'hint';
   try {
     const r = pin.startsWith('SESSION-') ? Object.assign(await api('apiSession', pin), {token:pin}) : await api('apiLogin', pin, $('employeeId').value.trim());
+    if(version!==LOGIN_VERSION)return;
+    $('pinInput').value='';
     ROLES = r.roles || []; lsSet('mg_roles',JSON.stringify(ROLES)); PIN = r.token; USER_ID = r.id; ME = r.name; CAN_PRICE = !!r.canPrice;
     lsSet('mg_pin', null); lsSet('mg_session', PIN); lsSet('mg_user_id', USER_ID); lsSet('mg_name', ME); lsSet('mg_price', CAN_PRICE ? '1' : '');
     // Identyfikator (nie PIN) zostaje na telefonie, żeby nie wpisywać go przy każdym logowaniu.
     lsSet('mg_last_id', USER_ID);
     afterLogin();
   } catch(e){
+    if(version!==LOGIN_VERSION)return;
     $('pinInput').value = '';
     // Zapisana sesja bez zasięgu: praca offline; serwer i tak sprawdzi sesję przy wysyłce kolejki.
     if (isNet(e) && pin.startsWith('SESSION-') && lsGet('mg_user_id')) {
@@ -474,6 +482,10 @@ async function afterLogin(offline){
   processQueue();
 }
 function logout(reason){
+  LOGIN_VERSION++;
+  if(typeof DUNSKA_TAB!=='undefined')DUNSKA_TAB='odbior';
+  $('productQuery').value='';$('productFilter').value='all';$('dunskaRawId').value='';
+  $('pinInput').value='';
   hideSheet(); stopScanner();
   if (PIN) api('apiLogout', PIN).catch(() => {});
   ROLES = []; USER_ID = null; PIN = ME = DOC = null; ['mg_pin','mg_session','mg_user_id','mg_name','mg_price','mg_roles','mg_docjson','mg_draft'].forEach(k => lsSet(k, null));
@@ -507,13 +519,17 @@ async function loadRecentPartners(){
     names.forEach(add);
   } catch(e) { /* Wybór ręczny pozostaje dostępny bez połączenia. */ }
 }
+let DOCS_REQUEST=0;
 async function loadDocs(){
+  const token=PIN,type=DOC_TYPE,request=++DOCS_REQUEST;
+  const current=()=>PIN===token && DOC_TYPE===type && request===DOCS_REQUEST;
   const box = $('docsList'); box.innerHTML = '<div class="loading"><div class="spin"></div>Wczytuję…</div>';
   try {
-    const docs = await api('apiListDocs', PIN, DOC_TYPE);
+    const docs = await api('apiListDocs', token, type);
+    if(!current())return;
     box.innerHTML = docs.length ? docs.map(d => `<div class="card tap" data-doc-id="${esc(d.id)}"><b>${esc(d.partner)}</b><div class="sub">${esc(d.date)} · ${d.participants.map(p => esc(p.name) + (p.status === 'ZAKOŃCZYŁ' ? ' ✓' : '')).join(', ') || 'nikt jeszcze nie liczy'}</div>${d.requireExpiry ? '<span class="tag warn">Data ważności obowiązkowa</span>' : ''}</div>`).join('')
       : `<p class="hint">Nic nie jest teraz liczone. Wpisz ${DOC_TYPE === 'DOSTAWA' ? 'dostawcę' : 'odbiorcę'} poniżej.</p>`;
-  } catch(e){ box.innerHTML = `<p class="hint bad">${esc(e.message)}</p>`; }
+  } catch(e){ if(current())box.innerHTML = `<p class="hint bad">${esc(e.message)}</p>`; }
 }
 async function startDoc(){
   const p = $('newPartner').value.trim(); if (p.length < 2) return toast('Wpisz nazwę');
@@ -620,7 +636,7 @@ $('fileIn').addEventListener('change', async e => {
     const image = await withOcrTimeout(compress(f, 1600, .88), 15000, 'Nie można przygotować zdjęcia. Wybierz JPG lub PNG.');
     if (photoOwner !== ME || photoDoc !== (DOC && DOC.id)) return;
     photo.front = image;
-    $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie zrobione ✓</span>`;
+    $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${esc(photo.front)}" alt=""><span>Zdjęcie zrobione ✓</span>`;
     await readPhotoName();
     return;
   }
@@ -720,14 +736,18 @@ function chosen(sku, ean){
 }
 
 /* ---- CENA ---- */
+let PRICE_REQUEST=0;
 async function showPrice(){
+  if(!cur)return;
+  const token=PIN,product=cur,request=++PRICE_REQUEST;
+  const current=()=>PIN===token && cur===product && request===PRICE_REQUEST;
   $('scanArea').hidden = true; $('countView').hidden = true; $('priceView').hidden = false;
   $('prName').textContent = cur.name || (cur.ean ? 'Produkt spoza katalogu' : '—');
   $('prMeta').textContent = [cur.sku && 'SKU ' + cur.sku, cur.ean && 'EAN ' + cur.ean].filter(Boolean).join(' · ');
   $('prVal').textContent = '…'; $('prSrc').textContent = ''; $('prStanM').textContent = '…'; $('prStanS').textContent = '…';
   $('btnPriceNow').hidden = true; $('btnToExport').hidden = !(DOC && DOC.type === 'EXPORT');
-  try { fillPrice(await api('apiPrice', PIN, cur.sku, cur.ean)); }
-  catch(e){ $('prVal').textContent = '—'; $('prSrc').textContent = isNet(e) ? 'Brak internetu' : e.message; }
+  try { const r=await api('apiPrice', token, product.sku, product.ean);if(current())fillPrice(r); }
+  catch(e){ if(current()){ $('prVal').textContent = '—'; $('prSrc').textContent = isNet(e) ? 'Brak internetu' : e.message; } }
 }
 function fillPrice(r){
   if (r.name && !cur.name) { cur.name = r.name; $('prName').textContent = r.name; }
@@ -738,9 +758,12 @@ function fillPrice(r){
   $('btnPriceNow').hidden = !(r.hurt === '' && cur.ean);
 }
 async function priceNow(){
+  if(!cur)return;
+  const token=PIN,product=cur,request=++PRICE_REQUEST;
+  const current=()=>PIN===token && cur===product && request===PRICE_REQUEST;
   $('btnPriceNow').disabled = true; $('prVal').textContent = '…'; $('prSrc').textContent = '🔎 Szukam ceny (Allegro, internet)…';
-  try { fillPrice(await api('apiPriceNow', PIN, cur.sku, cur.ean, cur.name)); } catch(e){ $('prSrc').textContent = e.message; }
-  finally { $('btnPriceNow').disabled = false; }
+  try {const r=await api('apiPriceNow',token,product.sku,product.ean,product.name);if(current())fillPrice(r);}catch(e){if(current())$('prSrc').textContent=e.message;}
+  finally {if(current())$('btnPriceNow').disabled=false;}
 }
 function priceToExport(){ setMode('exp', true); showCount(); }
 
@@ -811,7 +834,7 @@ async function mergeInto(dup, item){
     await api('apiUpdateItem', PIN, DOC.id, dup.clientId, { name: dup.name, ean: dup.ean, sku: dup.sku, qty: dup.qty + item.qty, expiry: dup.expiry || item.expiry,
       lot: [dup.lot, item.lot].filter(Boolean).filter((v,i,a) => a.indexOf(v) === i).join(', '), price: dup.price !== '' ? dup.price : item.price, notes: [dup.notes, item.notes].filter(Boolean).join('; ') });
     toast(`Doliczono ✅ razem ${dup.qty + item.qty} szt.`); refreshItems(); resetScan();
-  } catch(e){ toast('Brak połączenia — dodaję jako osobną pozycję'); enqueue(item); }
+  } catch(e){ toast(isNet(e) ? 'Brak potwierdzenia zapisu — sprawdź Moje po odzyskaniu połączenia przed ponownym doliczeniem.' : e.message); }
 }
 async function enqueue(item){
   if (!USER_ID) throw new Error('Zaloguj się ponownie');
@@ -832,7 +855,7 @@ async function processQueue(){
       if (q.error || q.ownerId !== ownerId || q.server !== API_URL) continue;
       try {
         if (q.item.needSku && !q.item.sku) {
-          const r = await api('apiNewSku', token, q.item.ean, q.item.name, q.item.photoFront);
+          const r = await api('apiNewSku', token, q.item.ean, q.item.name, q.item.photoFront, q.clientId);
           q.item.sku = r.sku; q.item.needSku = false; await qPut(q);
           if (!r.existing) toast('Nowy produkt: ' + r.sku);
         }
@@ -840,7 +863,7 @@ async function processQueue(){
         await api('apiAddItem', token, q.docId, q.item);
         await qDel(q.clientId);
       } catch(e){
-        if (isNet(e)) break;
+        if (PIN !== token || USER_ID !== ownerId || isNet(e)) break;
         q.error = e.message; await qPut(q);
       }
     }
@@ -883,7 +906,7 @@ function itemMenu(id){
   if (DOC.myStatus === 'ZAKOŃCZYŁ') return toast('Wznów liczenie, aby poprawiać');
   sheet(it.name, `${it.sku} · ${it.qty} szt.`, [
     { label: 'Zmień ilość', fn: () => sheet('Nowa ilość', it.name, [
-        { label: 'Zapisz', keep: true, fn: async () => { const q = parseInt(digits(document.getElementById('newQty').value), 10); if (!q) return toast('Wpisz ilość'); hideSheet();
+        { label: 'Zapisz', keep: true, fn: async () => { const raw=document.getElementById('newQty').value.trim(),q=Number(raw); if(raw==='' || !Number.isSafeInteger(q) || q<0 || q>1000000 || (q===0 && DOC.type!=='INWENTARYZACJA')) return toast('Wpisz poprawną ilość całkowitą'); hideSheet();
           try { await api('apiUpdateItem', PIN, DOC.id, id, { name: it.name, ean: it.ean, sku: it.sku, qty: q, expiry: it.expiry, lot: it.lot, price: it.price, notes: it.notes }); toast('Zapisano'); refreshItems(); } catch(e){ toast(e.message); } } },
         { label: 'Anuluj', cls: 'sec' }], `<input type="number" id="newQty" inputmode="numeric" value="${esc(it.qty)}" style="margin-bottom:12px;">`) },
     { label: 'Usuń', cls: 'danger', fn: async () => { try { await api('apiDeleteItem', PIN, DOC.id, id); toast('Usunięto'); refreshItems(); } catch(e){ toast(e.message); } } },
@@ -892,7 +915,17 @@ function itemMenu(id){
 }
 
 /* ================= koniec / zamknięcie ================= */
-async function refreshStatus(){ try { DOC = await api('apiDocInfo', PIN, DOC.id); lsSet('mg_docjson', JSON.stringify(DOC)); } catch(e){} if (DOC.status !== 'OTWARTA') { toast('Dokument został zamknięty'); return leaveDoc(); } renderStatus(); }
+async function refreshStatus(){
+  if(!DOC)return;
+  const token=PIN,doc=DOC;
+  try {
+    const result=await api('apiDocInfo',token,doc.id);
+    if(PIN!==token || DOC!==doc)return;
+    DOC=result;lsSet('mg_docjson',JSON.stringify(DOC));
+    if(DOC.status!=='OTWARTA'){toast('Dokument został zamknięty');return leaveDoc();}
+    renderStatus();
+  }catch(e){}
+}
 function renderStatus(){
   if (!DOC) return;
   $('partBox').innerHTML = DOC.participants.map(p => `<div class="item"><div class="n">${esc(p.name)}</div><div class="q" style="color:var(--ink-soft)">${p.status === 'ZAKOŃCZYŁ' ? '✓ zakończył' : '… liczy'}</div></div>`).join('');
@@ -922,7 +955,7 @@ async function doClose(force, pinOverride){
     if (force && (!reason || reason.trim().length < 10)) return toast('Zamknięcie anulowane — brak przyczyny');
     const r = await api('apiCloseDoc', PIN, DOC.id, cpin, force, reason);
     if (r.needsForce) return sheet('Nie wszyscy skończyli', `Jeszcze liczą: ${r.pending.join(', ')}. Ich dotychczasowe pozycje też zostaną zaksięgowane.`, [
-      { label: 'Zamknij mimo to', cls: 'danger', fn: () => doClose(true, cpin) }, { label: 'Poczekam', cls: 'sec' }]);
+      ...(ROLES.includes('FORCE_CLOSE') ? [{ label: 'Zamknij mimo to', cls: 'danger', fn: () => doClose(true, cpin) }] : []), { label: 'Poczekam', cls: 'sec' }]);
     if(r.status === 'DO_ZATWIERDZENIA') { toast('Dokument czeka na zatwierdzenie'); leaveDoc(); refreshApprovalCount(); return; }
     toast(`Zamknięto ✅ ${r.items} pozycji, ${r.qty} szt.`); leaveDoc();
     if(r.isDunskaDelivery) showDunskaQr(r);
@@ -944,7 +977,7 @@ function restoreDraft(saved){
     cur = draft.cur; showCount();
     for (const id of draftFields) $(id).value = draft.fields[id] || (id === 'cQty' ? '1' : '');
     photo = draft.photo || {front:null,exp:null};
-    if (photo.front) { $('btnReadName').hidden = false; $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${photo.front}" alt=""><span>Zdjęcie przywrócone ✓</span>`; }
+    if (photo.front) { $('btnReadName').hidden = false; $('phFront').classList.add('filled'); $('phFront').innerHTML = `<img src="${esc(photo.front)}" alt=""><span>Zdjęcie przywrócone ✓</span>`; }
     if (photo.exp) { $('phExp').classList.add('filled'); $('phExpTxt').textContent = 'Zdjęcie przywrócone ✓'; }
     lsSet('mg_draft', saved);
   } catch (_) { lsSet('mg_draft', null); }
