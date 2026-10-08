@@ -756,7 +756,7 @@ async function showPrice(){
   $('prName').textContent = cur.name || (cur.ean ? 'Produkt spoza katalogu' : '—');
   $('prMeta').textContent = [cur.sku && 'SKU ' + cur.sku, cur.ean && 'EAN ' + cur.ean].filter(Boolean).join(' · ');
   $('prVal').textContent = '…'; $('prSrc').textContent = ''; $('prStanM').textContent = '…'; $('prStanS').textContent = '…';
-  $('btnPriceNow').hidden = true; $('btnToExport').hidden = !(DOC && DOC.type === 'EXPORT');
+  $('btnPriceNow').hidden = true; $('btnPriceNow').disabled = false; $('btnToExport').hidden = !(DOC && DOC.type === 'EXPORT');
   try { const r=await api('apiPrice', token, product.sku, product.ean);if(current())fillPrice(r); }
   catch(e){ if(current()){ $('prVal').textContent = '—'; $('prSrc').textContent = isNet(e) ? 'Brak internetu' : e.message; } }
 }

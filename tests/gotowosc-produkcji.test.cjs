@@ -23,3 +23,18 @@ test('zamknięcie bez FORCE_CLOSE nie oferuje wymuszenia',async()=>{const h=page
 test('zapis kartoteki odświeża katalog skanera i nie wysyła równolegle drugi raz',async()=>{const h=page();let resolve,calls=0,loads=0;h.ctx.apiStub=()=>{calls++;return new Promise(r=>resolve=r)};h.ctx.loadStub=async()=>loads++;h.run("api=apiStub;loadCatalog=loadStub;openProduct=async()=>{};ROLES=['PRODUCTS_EDIT'];PRODUCT_ORIGINAL='X'");h.el('productSku').value='X';h.el('productName').value='Nowy';const a=h.run('saveProduct()'),b=h.run('saveProduct()');assert.equal(calls,1);resolve({});await Promise.all([a,b]);assert.equal(loads,1);});
 
 test('wymuszone zamknięcie używa formularza bez prompt i waliduje przyczynę',async()=>{const h=page();let modal,calls=[];h.ctx.capture=(t,b,a,extra)=>modal={t,a,extra};h.ctx.prompt=()=>{throw Error('prompt() is not supported.')};h.ctx.apiStub=async(fn,...args)=>{calls.push(args);return {needsForce:true,pending:['Julia']}};h.run("api=apiStub;ROLES=['POST_STOCK','FORCE_CLOSE'];sheet=(t,b,a,e)=>capture(t,b,a,e)");await h.run("doClose(false,'12345678')");await modal.a.find(a=>a.label==='Zamknij mimo to').fn();assert.match(modal.extra,/forceCloseReason/);assert.equal(calls.length,1);h.el('forceCloseReason').value='krótko';await modal.a[0].fn();assert.equal(calls.length,1);h.el('forceCloseReason').value='Julia zakończyła pracę i wysłała kolejkę';await modal.a[0].fn();assert.equal(calls.length,2);assert.equal(calls[1][3],true);assert.equal(calls[1][4],'Julia zakończyła pracę i wysłała kolejkę');});
+
+test('zmiana produktu podczas wyceny przywraca przycisk AI dla nowego produktu',async()=>{
+  const h=page();let rejectOld;
+  h.ctx.apiStub=(fn)=>fn==='apiPriceNow'?new Promise((resolve,reject)=>{rejectOld=reject}):Promise.resolve({hurt:'',detal:'',source:''});
+  h.run("api=apiStub;cur={sku:'A',ean:'5901234123457',name:'A'}");
+  const old=h.run('priceNow()');
+  assert.equal(h.el('btnPriceNow').disabled,true);
+  h.run("cur={sku:'B',ean:'5901234123457',name:'B'}");
+  await h.run('showPrice()');
+  assert.equal(h.el('btnPriceNow').hidden,false);
+  assert.equal(h.el('btnPriceNow').disabled,false);
+  rejectOld(Error('Limit AI został wyczerpany'));await old;
+  assert.equal(h.el('btnPriceNow').disabled,false);
+  assert.doesNotMatch(h.el('prSrc').textContent,/Limit AI/);
+});
