@@ -52,10 +52,10 @@ async function saveOfficePrice(sku,token=PIN,docId=OFFICE_DETAIL&&OFFICE_DETAIL.
  if(OFFICE_SAVING||!officeAllowed()||PIN!==token||!OFFICE_DETAIL||OFFICE_DETAIL.document.id!==docId)return;
  const row=OFFICE_DETAIL.rows.find(x=>x.sku===sku);if(!row)return;
  const detail=OFFICE_DETAIL,sequence=OFFICE_REQUEST;
- const input={buy:$('officeBuy').value,sell:$('officeSell').value,revision:row.revision,requestId:crypto.randomUUID()};const content=JSON.stringify([input.buy,input.sell]);if(row.pendingRequestId&&row.pendingContent===content)input.requestId=row.pendingRequestId;row.pendingRequestId=input.requestId;row.pendingContent=content;OFFICE_SAVING=true;
+ const input={buy:$('officeBuy').value,sell:$('officeSell').value,revision:row.revision,requestId:crypto.randomUUID()};const content=JSON.stringify([input.buy,input.sell]);if(row.pendingRequestId&&row.pendingContent===content)input.requestId=row.pendingRequestId;row.pendingRequestId=input.requestId;row.pendingContent=content;const saveTicket={};OFFICE_SAVING=saveTicket;
  try{const result=await api('apiOfficeSavePrice',token,docId,sku,input);if(PIN!==token||OFFICE_DETAIL!==detail||OFFICE_REQUEST!==sequence)return;Object.assign(row,result.row);delete row.pendingRequestId;delete row.pendingContent;OFFICE_DETAIL.totals=result.totals;hideSheet();renderOfficeDoc();toast('Ceny zapisane');}
  catch(e){if(PIN===token&&OFFICE_DETAIL&&OFFICE_DETAIL.document.id===docId){$('officeSaveMessage').textContent=e.message==='REVISION_CONFLICT'?'Ceny zmieniły się w innej karcie. Odśwież dokument przed ponownym zapisem.':e.message;if(!isNet(e))delete row.pendingRequestId;}}
- finally{OFFICE_SAVING=false;}
+ finally{if(OFFICE_SAVING===saveTicket)OFFICE_SAVING=false;}
 }
 let OFFICE_EXPORT_REQUEST=0;
 async function downloadOfficeDocument(docId,format){
@@ -87,4 +87,12 @@ async function printOfficeDocument(docId){
   }table.append(body);box.append(table);const t=saved.totals;box.append(officeText('p',(t.incomplete?'CZĘŚCIOWE CENY · ':'')+'Zakup netto: '+officePriceText(t.buyCents)+' zł · Sprzedaż netto: '+officePriceText(t.sellCents)+' zł · Zysk netto: '+officePriceText(t.profitCents)+' zł'));box.hidden=false;document.body.classList.add('office-print');
   try{window.print();}finally{document.body.classList.remove('office-print');box.hidden=true;box.replaceChildren();}
  }catch(e){if(PIN===token&&OFFICE_DETAIL===detail)$('officeDocMessage').textContent=e.message;}
+}
+
+function resetOfficeSession(){
+ OFFICE_REQUEST++;OFFICE_EXPORT_REQUEST++;OFFICE_DETAIL=null;OFFICE_PAGE=0;OFFICE_CURSOR=null;OFFICE_SAVING=false;
+ for(const id of ['officeList','officeRows','officeTotals','officeDocTitle','officeDocMeta','officeDocMessage','officeMessage','officePrint']){const el=document.getElementById(id);if(el){el.replaceChildren();el.textContent='';}}
+ for(const id of ['officeBuy','officeSell','officePartner','officeQuery','officeFrom','officeTo']){const el=document.getElementById(id);if(el)el.value='';}
+ for(const id of ['shExtra','shBody','shTitle']){const el=document.getElementById(id);if(el){el.replaceChildren();el.textContent='';}}
+ if(document.body)document.body.classList.remove('office-print');
 }

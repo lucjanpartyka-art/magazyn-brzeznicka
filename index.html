@@ -177,7 +177,7 @@
 </section>
 
 <section class="screen" id="scrOffice"><button class="link" onclick="show('scrHome')">← Wróć</button><h2>Biuro</h2><div class="office-filters"><div class="field"><label for="officeType">Typ</label><select id="officeType"><option value="">Wszystkie typy</option>DOSTAWA</option>EXPORT</option></select></div><div class="field"><label for="officeStatus">Status</label><select id="officeStatus"><option value="">Wszystkie statusy</option>ZAMKNIĘTA</option>DO_ZATWIERDZENIA</option></select></div><div class="field"><label for="officePartner">Kontrahent</label><input type="text" id="officePartner"></div><div class="field"><label for="officeQuery">Dokument</label><input type="text" id="officeQuery"></div><div class="field"><label for="officeFrom">Od</label><input type="date" id="officeFrom"></div><div class="field"><label for="officeTo">Do</label><input type="date" id="officeTo"></div></div><button class="btn sec" onclick="officeFilterChanged()">Pokaż dokumenty</button><p id="officeMessage" role="status"></p><div class="stack" id="officeList"></div><button class="btn sec" hidden id="officeMore">Następne dokumenty</button></section>
-<section class="screen" id="scrOfficeDoc"><button class="link" onclick="openOffice()">← Dokumenty</button><h2 id="officeDocTitle"></h2><p id="officeDocMeta" class="hint"></p><p id="officeDocMessage" role="status"></p><p id="officeTotals"></p><div class="row2"><button class="btn sec" onclick="downloadOfficeDocument('xlsx')">Pobierz Excel</button><button class="btn sec" onclick="downloadOfficeDocument('pdf')">Pobierz PDF</button></div><button class="btn sec" onclick="printOfficeDocument()">Drukuj</button><div id="officeRows" class="stack"></div><div class="bar"><button id="officePrev" class="link" onclick="OFFICE_PAGE--;renderOfficeDoc()">Poprzednia</button><span id="officePage"></span><button id="officeNext" class="link" onclick="OFFICE_PAGE++;renderOfficeDoc()">Następna</button></div></section>
+<section class="screen" id="scrOfficeDoc"><button class="link" onclick="openOffice()">← Dokumenty</button><h2 id="officeDocTitle"></h2><p id="officeDocMeta" class="hint"></p><p id="officeDocMessage" role="status"></p><p id="officeTotals"></p><div class="row2"><button class="btn sec" onclick="downloadOfficeDocument(OFFICE_DETAIL&&OFFICE_DETAIL.document.id,'xlsx')">Pobierz Excel</button><button class="btn sec" onclick="downloadOfficeDocument(OFFICE_DETAIL&&OFFICE_DETAIL.document.id,'pdf')">Pobierz PDF</button></div><button class="btn sec" onclick="printOfficeDocument(OFFICE_DETAIL&&OFFICE_DETAIL.document.id)">Drukuj</button><div id="officeRows" class="stack"></div><div class="bar"><button id="officePrev" class="link" onclick="OFFICE_PAGE--;renderOfficeDoc()">Poprzednia</button><span id="officePage"></span><button id="officeNext" class="link" onclick="OFFICE_PAGE++;renderOfficeDoc()">Następna</button></div></section>
 <section id="officePrint" hidden></section>
 
 <section class="screen" id="scrDunska">
@@ -502,6 +502,7 @@ async function afterLogin(offline){
   processQueue();
 }
 function logout(reason){
+  if(typeof resetOfficeSession==='function')resetOfficeSession();
   LOGIN_VERSION++;
   if(typeof DUNSKA_TAB!=='undefined')DUNSKA_TAB='odbior';
   $('productQuery').value='';$('productFilter').value='all';$('dunskaRawId').value='';
