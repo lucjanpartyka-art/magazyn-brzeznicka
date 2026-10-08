@@ -63,6 +63,10 @@
   .login h2{font-family:var(--font-d); margin:0 0 6px;}
   .home-tools{display:grid;gap:10px;margin-top:24px;padding-top:20px;border-top:1px solid var(--border);}
   .home-tools .btn.sec{text-align:left;padding:15px 16px;}
+  .home-tools .tool-title{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:16px;line-height:1.35;}
+  .home-tools .tool-description{display:block;margin-top:5px;color:var(--ink-soft);font-size:13px;font-weight:400;line-height:1.45;}
+  .home-tools .tool-count{display:inline-flex;align-items:center;justify-content:center;min-width:28px;padding:3px 8px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px;font-variant-numeric:tabular-nums;flex-shrink:0;}
+  #catInfo{color:var(--ink-soft);line-height:1.5;}
   .pin{width:100%; text-align:center; font-family:var(--font-d); font-size:28px; letter-spacing:.35em; padding:14px; border:2px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
   .big{display:grid; gap:12px;}
   .big button{padding:22px 16px; border-radius:16px; border:2px solid var(--border); background:var(--surface); text-align:left; cursor:pointer; color:var(--ink);}
@@ -158,11 +162,11 @@
     <button class="price" id="btnHomePrice" hidden onclick="openPriceOnly()"><b>💰 CENA</b><span>Sprawdź cenę hurt i stan po zeskanowaniu</span></button>
   </div>
   <nav class="home-tools" aria-label="Pozostałe zadania magazynu">
-  <button class="btn sec" id="btnToCount" onclick="openToCount()">Do policzenia</button>
-  <button class="btn sec" onclick="openInventories()">Inwentaryzacja</button>
-  <button class="btn sec" onclick="openProducts()">Lista produktów</button>
-  <button class="btn sec" id="btnDunska" hidden onclick="openDunska()">Duńska · odbiór i braki</button>
-  <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()">Do zatwierdzenia <span id="approvalCount">0</span></button>
+  <button class="btn sec" id="btnToCount" onclick="openToCount()"><span class="tool-title">Do policzenia</span><span class="tool-description">Sprawdź ilość towaru na półce</span></button>
+  <button class="btn sec" onclick="openInventories()"><span class="tool-title">Inwentaryzacja</span><span class="tool-description">Policz magazyn i sprawdź różnice</span></button>
+  <button class="btn sec" onclick="openProducts()"><span class="tool-title">Lista produktów</span><span class="tool-description">Wyszukaj produkt i jego dane</span></button>
+  <button class="btn sec" id="btnDunska" hidden onclick="openDunska()"><span class="tool-title">Duńska · odbiór i braki</span><span class="tool-description">Odbierz dostawę lub sprawdź braki</span></button>
+  <button class="btn sec" id="btnApprovals" hidden onclick="openApprovals()"><span class="tool-title">Do zatwierdzenia <span class="tool-count" id="approvalCount">0</span></span><span class="tool-description">Sprawdź przyjęcia oczekujące na decyzję</span></button>
   </nav>
   <div class="hint" id="catInfo" style="margin-top:16px;"></div>
   <button class="link" onclick="logout()">Wyloguj</button>
