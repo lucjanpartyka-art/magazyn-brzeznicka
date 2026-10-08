@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 const {createEnv}=require('../../tests/sim/gas-mock.cjs');
 test('po wylogowaniu wydanie wymaga ponownego logowania, nowa sesja działa',async()=>{
   const env=createEnv();env.setup({staff:[{id:'EMP-BART-0002',name:'Bartek',pin:'23456789',roles:['POST_STOCK']}],catalog:[]});
-  const storage=new Map(),els=new Map();const el=id=>{if(!els.has(id))els.set(id,{value:'',textContent:'',addEventListener(){}});return els.get(id)};
+  const storage=new Map(),els=new Map();const el=id=>{if(!els.has(id))els.set(id,{value:'',textContent:'',classList:{remove(){}},addEventListener(){}});return els.get(id)};
   const ctx=vm.createContext({Map,Set,Date,JSON,Number,String,Promise,Error,console,setTimeout(){},clearTimeout(){},document:{getElementById:el,querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},navigator:{},WarehouseScanner:{Scanner:class{stop(){}}},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
   const script=[...fs.readFileSync('index.html','utf8').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m=>m[1]).join('\n');vm.runInContext(script.slice(0,script.lastIndexOf('(function init(){')),ctx);
   ctx.realApi=async(fn,...args)=>{const r=env.call(fn,...args);if(!r.ok)throw Error(r.error);return r.data};

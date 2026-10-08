@@ -212,6 +212,7 @@
   <div id="docsList"></div>
   <div class="label" id="newLabel"></div>
   <div class="field"><label for="newPartner" id="newPartnerLabel"></label><input type="text" id="newPartner" autocomplete="off"></div>
+  <div id="recentPartners" aria-label="Szybki wybór kontrahenta"></div>
   <button class="btn" id="btnStart" onclick="startDoc()">Rozpocznij liczenie</button>
 </section>
 
@@ -444,17 +445,36 @@ async function afterLogin(offline){
   const token = PIN;
   if (saved) {
     let d;
-    try { d = JSON.parse(saved); if (offline) return enterDoc(d); const info = await api('apiDocInfo', PIN, d.id); if (PIN !== token) return; return enterDoc(info); }
-    catch(e){
+    try {
+      d = JSON.parse(saved);
+      if (!offline) d = await api('apiDocInfo', token, d.id);
+    } catch(e) {
       if (PIN !== token) return;
-      if (isNet(e) && d) { toast('Brak połączenia — przywracam otwarty dokument'); return enterDoc(d); }
-      if (!isNet(e)) lsSet('mg_docjson', null);
+      if (!isNet(e)) { lsSet('mg_docjson', null); d = null; }
     }
+    if (PIN !== token) return;
+    if (d && d.status === 'OTWARTA') {
+      sheet(`Masz niedokończony dokument: ${d.title || d.partner}. Wrócić?`, '', [
+        { label: 'Wróć', fn: async () => {
+          if (PIN !== token) return;
+          try {
+            const info = offline ? d : await api('apiDocInfo', token, d.id);
+            if (PIN === token) enterDoc(info);
+          } catch(e) {
+            if (PIN !== token) return;
+            if (isNet(e)) enterDoc(d); else toast(e.message);
+          }
+        } },
+        { label: 'Nie teraz', cls: 'sec', fn: () => {
+          if (PIN === token) lsSet('mg_docjson', null);
+        } }
+      ]);
+    } else if (d) lsSet('mg_docjson', null);
   }
   processQueue();
 }
 function logout(reason){
-  stopScanner();
+  hideSheet(); stopScanner();
   if (PIN) api('apiLogout', PIN).catch(() => {});
   ROLES = []; USER_ID = null; PIN = ME = DOC = null; ['mg_pin','mg_session','mg_user_id','mg_name','mg_price','mg_roles','mg_docjson','mg_draft'].forEach(k => lsSet(k, null));
   $('who').textContent = ''; show('scrLogin');
@@ -467,7 +487,25 @@ function openDocs(type){
   $('docsLabel').textContent = isIn ? 'Dostawy w toku — dołącz' : 'Eksporty w toku — dołącz';
   $('newLabel').textContent = isIn ? 'Nowa dostawa' : 'Nowy export';
   $('newPartnerLabel').textContent = isIn ? 'Od kogo (np. Roman Warszawa)' : 'Do kogo (np. Darek)';
-  $('newPartner').value = ''; show('scrDocs'); loadDocs();
+  $('newPartner').value = ''; show('scrDocs'); loadDocs(); loadRecentPartners();
+}
+async function loadRecentPartners(){
+  const type = DOC_TYPE, token = PIN, box = $('recentPartners');
+  const add = name => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'btn sec'; button.textContent = name;
+    button.onclick = () => { $('newPartner').value = name; };
+    box.appendChild(button);
+  };
+  box.innerHTML = '';
+  if (type === 'EXPORT') add('Magazyn Duńska');
+  try {
+    const names = await api('apiRecentPartners', token, type);
+    if (PIN !== token || DOC_TYPE !== type) return;
+    box.innerHTML = '';
+    if (type === 'EXPORT') add('Magazyn Duńska');
+    names.forEach(add);
+  } catch(e) { /* Wybór ręczny pozostaje dostępny bez połączenia. */ }
 }
 async function loadDocs(){
   const box = $('docsList'); box.innerHTML = '<div class="loading"><div class="spin"></div>Wczytuję…</div>';
